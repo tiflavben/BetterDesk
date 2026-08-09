@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"net"
 	"regexp"
@@ -745,7 +746,7 @@ func (s *Server) handlePunchHoleRequest(msg *pb.PunchHoleRequest, raddr *net.UDP
 			Union: &pb.RendezvousMessage_PunchHoleResponse{
 				PunchHoleResponse: &pb.PunchHoleResponse{
 					Failure:     pb.PunchHoleResponse_OFFLINE,
-					RelayServer: s.getRelayServer(),
+					RelayServer: s.getRelayServerFor(initiatorID, targetID),
 				},
 			},
 		}
@@ -782,7 +783,7 @@ func (s *Server) handlePunchHoleRequest(msg *pb.PunchHoleRequest, raddr *net.UDP
 		}
 	}
 
-	relayServer, sameNetwork, hairpin := s.selectPeerRelayServer(s.getRelayServer(), raddr, target.UDPAddr)
+	relayServer, sameNetwork, hairpin := s.selectPeerRelayServer(s.getRelayServerFor(initiatorID, targetID), raddr, target.UDPAddr)
 	relayServer = s.applyNetworkRelayPolicy(relayServer, initiatorID, targetID)
 	if sameNetwork {
 		log.Printf("[signal] LAN detected: %s and %s on same network, relay=%s", raddr.IP, target.UDPAddr.IP, relayServer)
@@ -932,7 +933,7 @@ func (s *Server) handlePunchHoleRequestTCP(msg *pb.PunchHoleRequest, raddr *net.
 			Union: &pb.RendezvousMessage_PunchHoleResponse{
 				PunchHoleResponse: &pb.PunchHoleResponse{
 					Failure:     pb.PunchHoleResponse_OFFLINE,
-					RelayServer: s.getRelayServer(),
+					RelayServer: s.getRelayServerFor(initiatorID, targetID),
 				},
 			},
 		}
@@ -950,7 +951,7 @@ func (s *Server) handlePunchHoleRequestTCP(msg *pb.PunchHoleRequest, raddr *net.
 		}
 	}
 
-	relayServer, sameNetwork, hairpin := s.selectPeerRelayServer(s.getRelayServer(), raddr, target.UDPAddr)
+	relayServer, sameNetwork, hairpin := s.selectPeerRelayServer(s.getRelayServerFor(initiatorID, targetID), raddr, target.UDPAddr)
 	relayServer = s.applyNetworkRelayPolicy(relayServer, initiatorID, targetID)
 	if sameNetwork {
 		log.Printf("[signal] LAN detected (TCP): %s and %s on same network, relay=%s", raddr.IP, target.UDPAddr.IP, relayServer)
@@ -1156,7 +1157,15 @@ func (s *Server) handlePunchHoleSent(phs *pb.PunchHoleSent, senderAddr *net.UDPA
 	// peers keep the public relay to avoid NAT hairpin failures (#121).
 	relayServer := phs.RelayServer
 	if relayServer == "" {
+		// Multi-relay: resolve the initiator ID (best effort) so both peers of
+		// the session hash to the same relay instance; fall back to the default
+		// relay when the initiator cannot be identified.
 		relayServer = s.getRelayServer()
+		if targetID != "" {
+			if initiatorID := s.peerIDForAddr(initiatorAddr); initiatorID != "" {
+				relayServer = s.getRelayServerFor(initiatorID, targetID)
+			}
+		}
 	}
 	relayServer, sameNetwork, hairpin := s.selectPeerRelayServer(relayServer, senderAddr, initiatorAddr)
 	if sameNetwork {
@@ -1241,6 +1250,10 @@ func (s *Server) handleRequestRelay(msg *pb.RequestRelay, raddr *net.UDPAddr) {
 	if !ok {
 		s.sendUDP(s.relayUnauthorizedResponse(relayServer), raddr)
 		return
+	}
+	if msg.RelayServer == "" {
+		// Multi-relay: pin both peers of the session to the same instance.
+		relayServer = s.getRelayServerFor(initiatorID, targetID)
 	}
 
 	target := s.peers.Get(targetID)
@@ -1418,6 +1431,10 @@ func (s *Server) handleRequestRelayTCP(msg *pb.RequestRelay, raddr *net.UDPAddr,
 	initiatorID, ok := s.requireAuthorizedInitiator(raddr, targetID, msg.GetToken())
 	if !ok {
 		return s.relayUnauthorizedResponse(relayServer)
+	}
+	if msg.RelayServer == "" {
+		// Multi-relay: pin both peers of the session to the same instance.
+		relayServer = s.getRelayServerFor(initiatorID, targetID)
 	}
 
 	target := s.peers.Get(targetID)
@@ -1636,7 +1653,7 @@ func (s *Server) handleRelayResponseForward(msg *pb.RendezvousMessage, senderAdd
 
 	// LAN detection: use LAN relay only for genuine LAN cases. Shared public IP
 	// peers keep the public relay to avoid NAT hairpin failures (#121).
-	relayServer := s.getRelayServer()
+	relayServer := s.getRelayServerFor(initiatorID, targetID)
 	relayServer, sameNetwork, hairpin := s.selectPeerRelayServer(relayServer, senderAddr, initiatorAddr)
 	if sameNetwork {
 		log.Printf("[signal] RelayResponse LAN detected: %s and %s on same network, relay=%s", senderAddr.IP, initiatorAddr.IP, relayServer)
@@ -2170,6 +2187,25 @@ func (s *Server) getRelayServer() string {
 	// Should not happen — detectLocalIP always detects LAN IP
 	log.Printf("[signal] WARN: No relay address available — remote connections will fail")
 	return fmt.Sprintf(":%d", s.cfg.RelayPort)
+}
+
+// getRelayServerFor returns the relay server for a peer pair using consistent
+// hashing when multiple relay servers are configured. Both peers of a session
+// always resolve to the same relay instance.
+func (s *Server) getRelayServerFor(initiatorID, targetID string) string {
+	relays := s.cfg.GetRelayServers()
+	if len(relays) <= 1 {
+		return s.getRelayServer()
+	}
+	a, b := initiatorID, targetID
+	if a > b {
+		a, b = b, a
+	} // canonical order: (A,B) and (B,A) hash identically
+	h := fnv.New32a()
+	h.Write([]byte(a))
+	h.Write([]byte{0})
+	h.Write([]byte(b))
+	return relays[h.Sum32()%uint32(len(relays))]
 }
 
 // getLANRelayServer returns the relay server address suitable for LAN peers.

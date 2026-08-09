@@ -29,7 +29,7 @@ type Server struct {
 	bwLimiter      *ratelimit.BandwidthLimiter
 	connLimiter    *ratelimit.ConnLimiter
 	sessionLimiter *ratelimit.ConnLimiter // active paired sessions per IP (post-pair)
-	authorizations *AuthorizationRegistry
+	authorizations AuthorizationStore
 	tcpLn          net.Listener
 	wsHTTP         *http.Server // WebSocket relay listener
 	ctx            context.Context
@@ -119,7 +119,7 @@ func (s *Server) SetSessionLimiter(cl *ratelimit.ConnLimiter) {
 
 // SetAuthorizationRegistry overrides the signal-issued relay authorization
 // registry. It is primarily useful for isolated deployments and tests.
-func (s *Server) SetAuthorizationRegistry(registry *AuthorizationRegistry) {
+func (s *Server) SetAuthorizationRegistry(registry AuthorizationStore) {
 	if registry != nil {
 		s.authorizations = registry
 	}

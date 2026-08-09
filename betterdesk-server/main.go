@@ -208,6 +208,27 @@ func main() {
 	log.Printf("Security modules initialized (blocklist=%d entries, rate-limit=%s)",
 		blocklist.Count(), rateLimitDesc)
 
+	// Initialize the relay ticket store. Relay-only mode cannot pair clients
+	// with an in-process store (no signal server), so it forces the shared
+	// DB-backed store so tickets authorized by a remote signal are claimable.
+	if cfg.RelayTicketStore != "db" && cfg.Mode == "relay" {
+		log.Printf("WARN: relay-only mode requires a shared ticket store; switching to db store")
+		cfg.RelayTicketStore = "db"
+	}
+	if cfg.RelayTicketStore == "db" {
+		ticketDB, err := db.OpenRelayTicketStore(cfg.DBPath, cfg.DBPath)
+		if err != nil {
+			log.Fatalf("Failed to open relay ticket store: %v", err)
+		}
+		defer ticketDB.Close()
+		registry, err := relay.NewDBAuthorizationRegistry(ticketDB)
+		if err != nil {
+			log.Fatalf("Failed to initialize DB relay ticket registry: %v", err)
+		}
+		relay.SetDefaultAuthorizationRegistry(registry)
+		log.Printf("[relay] Using DB-backed ticket store (shared across relay instances)")
+	}
+
 	// Initialize JWT manager for API authentication
 	jwtSecret := cfg.JWTSecret
 	if jwtSecret == "" {
@@ -789,6 +810,7 @@ func parseFlags() *config.Config {
 	flag.StringVar(&cfg.DBPath, "db", cfg.DBPath, "Database DSN: SQLite path or postgres://... URI")
 	flag.StringVar(&cfg.KeyFile, "key-file", cfg.KeyFile, "Ed25519 key file path (without extension)")
 	flag.StringVar(&cfg.RelayServers, "relay-servers", cfg.RelayServers, "Comma-separated relay server addresses")
+	flag.StringVar(&cfg.RelayTicketStore, "relay-ticket-store", cfg.RelayTicketStore, "Relay ticket store: memory or db")
 	flag.StringVar(&cfg.RendezvousServers, "rendezvous-servers", cfg.RendezvousServers, "Comma-separated rendezvous server addresses")
 	flag.StringVar(&cfg.Mask, "mask", cfg.Mask, "LAN mask (e.g. 192.168.0.0/24)")
 	flag.BoolVar(&cfg.AlwaysUseRelay, "always-relay", cfg.AlwaysUseRelay, "Always use relay (skip hole punching)")
@@ -849,6 +871,10 @@ func parseFlags() *config.Config {
 	cfg.Mode = strings.ToLower(cfg.Mode)
 	if cfg.Mode != "all" && cfg.Mode != "signal" && cfg.Mode != "relay" {
 		log.Fatalf("Invalid mode: %s (must be: all, signal, relay)", cfg.Mode)
+	}
+	// Validate relay ticket store
+	if cfg.RelayTicketStore != "memory" && cfg.RelayTicketStore != "db" {
+		log.Fatalf("Invalid relay ticket store: %s (must be: memory, db)", cfg.RelayTicketStore)
 	}
 
 	return cfg

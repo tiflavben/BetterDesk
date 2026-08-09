@@ -38,6 +38,7 @@ type Config struct {
 
 	// Servers
 	RelayServers      string // Comma-separated relay server addresses
+	RelayTicketStore  string // Relay ticket store: "memory" (default, in-process) or "db" (shared across instances)
 	RendezvousServers string // Comma-separated rendezvous server addresses
 
 	// Network mask
@@ -178,6 +179,7 @@ func DefaultConfig() *Config {
 		ClientSessionSliding:      true,
 		ClientSessionMaxDays:      30,
 		RelayMaxConnsIP:           20,
+		RelayTicketStore:          "memory",
 		EnrollmentMode:            EnrollmentModeOpen, // Backward compatible default
 		PanelSignalProxyCIDRs:     panelCIDRs,
 		CDAPPort:                  21122,
@@ -245,6 +247,9 @@ func (c *Config) LoadEnv() {
 	}
 	if v := os.Getenv("RELAY_SERVERS"); v != "" {
 		c.RelayServers = v
+	}
+	if v := os.Getenv("RELAY_TICKET_STORE"); v != "" {
+		c.RelayTicketStore = v
 	}
 	if v := os.Getenv("RENDEZVOUS_SERVERS"); v != "" {
 		c.RendezvousServers = v

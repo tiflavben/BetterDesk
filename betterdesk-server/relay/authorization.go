@@ -18,6 +18,20 @@ type AuthorizationRegistry struct {
 	now     func() time.Time
 }
 
+// AuthorizationStore is the storage interface for relay pair tickets. The
+// in-memory AuthorizationRegistry implements it for the all-in-one process;
+// DBAuthorizationRegistry implements it on a shared database so multiple relay
+// instances (hbbr-style cluster) can claim tickets authorized by any signal.
+type AuthorizationStore interface {
+	Authorize(uuid, initiatorID, targetID string) bool
+	Claim(uuid string) bool
+	Release(uuid string)
+	RevokeForPeer(peerID string)
+}
+
+// Compile-time assertion that the in-memory registry satisfies the interface.
+var _ AuthorizationStore = (*AuthorizationRegistry)(nil)
+
 type relayAuthorization struct {
 	initiatorID string
 	targetID    string
@@ -39,7 +53,16 @@ func NewAuthorizationRegistry() *AuthorizationRegistry {
 // defaultAuthorizationRegistry is shared by the signal and relay packages in
 // the all-in-one process. Keeping it package-owned avoids adding a token field
 // to RustDesk's RequestRelay framing.
-var defaultAuthorizationRegistry = NewAuthorizationRegistry()
+var defaultAuthorizationRegistry AuthorizationStore = NewAuthorizationRegistry()
+
+// SetDefaultAuthorizationRegistry replaces the global ticket store shared by
+// the signal and relay packages. Used to install a DB-backed store in
+// clustered (multi-relay) deployments. A nil argument is ignored.
+func SetDefaultAuthorizationRegistry(s AuthorizationStore) {
+	if s != nil {
+		defaultAuthorizationRegistry = s
+	}
+}
 
 // AuthorizeRelayPair records an authorized initiator/target pair for uuid.
 // An active ticket may be retried only by the same pair. A consumed UUID cannot
