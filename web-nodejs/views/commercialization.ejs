@@ -84,6 +84,7 @@
                         <th>${_('commercialization.contracts.target')}</th>
                         <th>${_('commercialization.contracts.package')}</th>
                         <th>${_('commercialization.contracts.remaining')}</th>
+                        <th>${_('commercialization.contracts.quota')}</th>
                         <th>${_('commercialization.contracts.status')}</th>
                         <th>${_('commercialization.contracts.validity')}</th>
                         <th>${_('commercialization.contracts.actions')}</th>
@@ -277,6 +278,10 @@
                     <input type="date" id="assign-valid-until" class="form-control">
                 </label>
             </div>
+            <label class="form-label">${_('commercialization.contracts.quota')}
+                <input type="number" id="assign-quota-mb" class="form-control" min="0" step="1" placeholder="${_('commercialization.contracts.quota_placeholder')}">
+            </label>
+            <p class="text-muted form-hint">${_('commercialization.contracts.quota_hint')}</p>
             <p id="assign-modal-error" class="form-error hidden"></p>
         </div>
         <div class="modal-footer">

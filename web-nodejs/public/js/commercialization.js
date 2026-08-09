@@ -117,6 +117,17 @@
         return `${from} → ${until}`;
     }
 
+    const MB = 1024 * 1024;
+
+    function formatQuota(c) {
+        const quota = Number(c.quota_bytes) || 0;
+        const used = Number(c.used_bytes) || 0;
+        if (quota <= 0) return t('commercialization.contracts.quota_unlimited', 'Unlimited');
+        const usedMb = Math.round((used / MB) * 100) / 100;
+        const quotaMb = Math.round((quota / MB) * 100) / 100;
+        return `${usedMb} / ${quotaMb} MB`;
+    }
+
     let editingPackageId = null;
     let editingContractId = null;
 
@@ -266,6 +277,7 @@
                 <td>${targetLabel}</td>
                 <td>${escapeHtml(c.package_name || c.package_id)}</td>
                 <td>${formatMinutes(c.remaining_minutes)}</td>
+                <td>${formatQuota(c)}</td>
                 <td>${escapeHtml(c.status)}</td>
                 <td>${formatValidity(c)}</td>
                 <td class="actions-cell">
@@ -538,6 +550,8 @@
         document.getElementById('assign-overage-rate').value = contract.overage_rate ?? '';
         document.getElementById('assign-valid-from').value = contract.valid_from ? String(contract.valid_from).slice(0, 10) : '';
         document.getElementById('assign-valid-until').value = contract.valid_until ? String(contract.valid_until).slice(0, 10) : '';
+        const quotaBytes = Number(contract.quota_bytes) || 0;
+        document.getElementById('assign-quota-mb').value = quotaBytes > 0 ? Math.round((quotaBytes / MB) * 100) / 100 : '';
 
         openModal('assign-modal');
     }
@@ -554,6 +568,7 @@
         document.getElementById('assign-overage-rate').value = '';
         document.getElementById('assign-valid-from').value = '';
         document.getElementById('assign-valid-until').value = '';
+        document.getElementById('assign-quota-mb').value = '';
     }
 
     async function submitAssignModal() {
@@ -566,6 +581,10 @@
         const overageRaw = document.getElementById('assign-overage-rate')?.value;
         const validFrom = document.getElementById('assign-valid-from')?.value;
         const validUntil = document.getElementById('assign-valid-until')?.value;
+        const quotaMbRaw = document.getElementById('assign-quota-mb')?.value;
+        const quotaBytes = quotaMbRaw === '' || quotaMbRaw == null
+            ? 0
+            : Math.max(0, Math.round(parseFloat(quotaMbRaw) * MB));
 
         if (editingContractId) {
             const patch = {};
@@ -574,6 +593,7 @@
             if (overageRaw !== '') patch.overage_rate = parseFloat(overageRaw);
             patch.valid_from = validFrom ? `${validFrom}T00:00:00Z` : null;
             patch.valid_until = validUntil ? `${validUntil}T23:59:59Z` : null;
+            patch.quota_bytes = quotaBytes;
             try {
                 await api(`/api/panel/billing/contracts/${encodeURIComponent(editingContractId)}`, {
                     method: 'PUT',
@@ -608,6 +628,7 @@
             if (overageRaw !== '') body.overage_rate = parseFloat(overageRaw);
             if (validFrom) body.valid_from = `${validFrom}T00:00:00Z`;
             if (validUntil) body.valid_until = `${validUntil}T23:59:59Z`;
+            body.quota_bytes = quotaBytes;
 
             await api('/api/panel/billing/contracts', { method: 'POST', body });
             closeModal('assign-modal');
