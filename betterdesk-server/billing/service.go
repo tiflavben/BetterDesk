@@ -245,6 +245,13 @@ func (s *Service) CheckConnection(deviceID string) ConnectionCheckResult {
 		(contract.ValidUntil != nil && now.After(*contract.ValidUntil)) {
 		return ConnectionCheckResult{Allowed: false, Reason: "contract_expired", OrgID: orgID, HasBilling: true}
 	}
+	// Minute-package exhaustion: remaining_minutes <= 0 means the package has
+	// been fully consumed (or was created without minutes) — reject. Without
+	// this check a contract whose minutes ran out would keep accepting
+	// sessions forever (only suspension/expiry/quota were enforced).
+	if contract.RemainingMinutes <= 0 {
+		return ConnectionCheckResult{Allowed: false, Reason: "minutes_exhausted", OrgID: orgID, HasBilling: true}
+	}
 	// Traffic quota enforcement: a positive QuotaBytes cap is compared
 	// against cumulative UsedBytes. Once exhausted the connection is
 	// rejected until an admin raises the quota or resets usage.

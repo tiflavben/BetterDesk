@@ -137,6 +137,25 @@ func TestCheckConnectionContractExpiry(t *testing.T) {
 	}
 }
 
+func TestCheckConnectionMinutesExhausted(t *testing.T) {
+	exhausted := contractFor("dev6", "active", nil)
+	exhausted.RemainingMinutes = 0
+	fdb := &fakeBillingDB{
+		contracts: map[string]*db.BillingContract{
+			db.BillingTargetDevice + "|dev6": exhausted,
+		},
+		orgIDs: map[string]string{"dev6": "org1"},
+	}
+	svc := NewService(fdb, nil, 1, false)
+	got := svc.CheckConnection("dev6")
+	if got.Allowed {
+		t.Fatalf("Allowed=true, want false (minutes exhausted must reject)")
+	}
+	if got.Reason != "minutes_exhausted" {
+		t.Fatalf("Reason=%q want minutes_exhausted", got.Reason)
+	}
+}
+
 func TestCheckConnectionTrafficQuota(t *testing.T) {
 	cases := []struct {
 		name       string
