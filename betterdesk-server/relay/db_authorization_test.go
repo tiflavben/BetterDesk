@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver
 	_ "modernc.org/sqlite"
 )
 
@@ -43,6 +44,11 @@ func newRelayTicketRegistries(t *testing.T) (*DBAuthorizationRegistry, *DBAuthor
 	r2, err := NewDBAuthorizationRegistry(db2)
 	if err != nil {
 		t.Fatalf("NewDBAuthorizationRegistry(db2): %v", err)
+	}
+	// Wiring regression guard: a real SQLite handle must never be detected as
+	// PostgreSQL (see TestIsPostgresDriver — %T string matching misdetects it).
+	if r1.pg || r2.pg {
+		t.Fatalf("NewDBAuthorizationRegistry on SQLite must set pg=false, got r1.pg=%v r2.pg=%v", r1.pg, r2.pg)
 	}
 	return r1, r2
 }
@@ -185,5 +191,37 @@ func TestDBAuthorizationRegistryPlaceholderConversion(t *testing.T) {
 	sqlite := &DBAuthorizationRegistry{pg: false}
 	if got := sqlite.sql(`SELECT ? FROM t WHERE uuid = ?`); got != `SELECT ? FROM t WHERE uuid = ?` {
 		t.Fatalf("sqlite pass-through expected unchanged SQL, got %q", got)
+	}
+}
+
+// TestIsPostgresDriver exercises the driver-detection helper — the logic
+// that was previously untested and silently broken: string-matching %T
+// output can never match "pgx" because the registered pgx database/sql
+// driver's dynamic type is *stdlib.Driver (package-qualified name contains
+// no "pgx").
+func TestIsPostgresDriver(t *testing.T) {
+	// pgx stdlib driver instance: constructing one directly is not possible
+	// (unexported fields), so assert via the registered driver lookup used by
+	// database/sql for the "pgx" name.
+	sqlDB, err := sql.Open("pgx", "postgres://user:pass@127.0.0.1:1/none?connect_timeout=1")
+	if err != nil {
+		t.Fatalf("sql.Open(pgx): %v", err)
+	}
+	defer sqlDB.Close()
+	// sql.Open is lazy: Driver() returns the registered instance without
+	// establishing a connection, so no live PostgreSQL server is required.
+	if !isPostgresDriver(sqlDB) {
+		t.Fatal("isPostgresDriver(pgx *sql.DB) = false, want true — driver detection is broken")
+	}
+
+	// Genuine SQLite handle must not be detected as PostgreSQL.
+	db1, db2 := newRelayTicketDBs(t)
+	if isPostgresDriver(db1) || isPostgresDriver(db2) {
+		t.Fatal("isPostgresDriver(SQLite *sql.DB) = true, want false")
+	}
+
+	// Nil safety.
+	if isPostgresDriver(nil) {
+		t.Fatal("isPostgresDriver(nil) = true, want false")
 	}
 }

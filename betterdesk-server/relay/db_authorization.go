@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/unitronix/betterdesk-server/config"
 )
 
@@ -43,7 +44,7 @@ func NewDBAuthorizationRegistry(db *sql.DB) (*DBAuthorizationRegistry, error) {
 	}
 	r := &DBAuthorizationRegistry{
 		db:  db,
-		pg:  strings.Contains(fmt.Sprintf("%T", db.Driver()), "pgx"),
+		pg:  isPostgresDriver(db),
 		now: time.Now,
 	}
 	for _, stmt := range []string{relayTicketsDDL, relayTicketUsedDDL} {
@@ -52,6 +53,23 @@ func NewDBAuthorizationRegistry(db *sql.DB) (*DBAuthorizationRegistry, error) {
 		}
 	}
 	return r, nil
+}
+
+// isPostgresDriver reports whether db is backed by the PostgreSQL driver.
+//
+// The pgx stdlib package registers its driver under the names "pgx" and
+// "pgx/v5", but the dynamic type of the registered instance is *stdlib.Driver
+// — a type-assertion is the reliable check. String-matching %T output
+// (strings.Contains(fmt.Sprintf("%T", db.Driver()), "pgx")) is a known
+// anti-pattern here: it prints the package-qualified type name, which never
+// contains "pgx", so PostgreSQL would be silently misdetected as SQLite and
+// every ?-placeholder statement would fail with a syntax error.
+func isPostgresDriver(db *sql.DB) bool {
+	if db == nil {
+		return false
+	}
+	_, ok := db.Driver().(*stdlib.Driver)
+	return ok
 }
 
 // sql renders a SQLite-style statement with ? placeholders for the backing
