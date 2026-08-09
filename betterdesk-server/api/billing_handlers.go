@@ -212,6 +212,19 @@ func (s *Server) handleUpdateBillingContract(w http.ResponseWriter, r *http.Requ
 			existing.ValidUntil = t
 		}
 	}
+	if raw, ok := patch["quota_bytes"]; ok {
+		var q int64
+		if err := json.Unmarshal(raw, &q); err == nil && q >= 0 {
+			existing.QuotaBytes = q
+		}
+	}
+	// used_bytes is admin-resettable (e.g. monthly quota refresh); enforce >= 0.
+	if raw, ok := patch["used_bytes"]; ok {
+		var u int64
+		if err := json.Unmarshal(raw, &u); err == nil && u >= 0 {
+			existing.UsedBytes = u
+		}
+	}
 	if err := s.db.UpdateBillingContract(existing); err != nil {
 		writeInternalError(w, err, "UpdateBillingContract")
 		return
@@ -238,7 +251,7 @@ func (s *Server) handleBillingStats(w http.ResponseWriter, r *http.Request) {
 		active = s.billing.ActiveSessionCount()
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"active_sessions":      active,
+		"active_sessions":        active,
 		"contracts_expiring_30d": expiring,
 	})
 }

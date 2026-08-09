@@ -3,6 +3,8 @@ package billing
 import (
 	"testing"
 	"time"
+
+	"github.com/unitronix/betterdesk-server/db"
 )
 
 func TestRoundUpMinutes(t *testing.T) {
@@ -64,5 +66,113 @@ func TestSessionAmountCalculation(t *testing.T) {
 	}
 	if total != 31.0 {
 		t.Fatalf("total=%v want 31", total)
+	}
+}
+
+// fakeBillingDB implements just enough of db.Database for CheckConnection
+// (device-level contract resolution). Uncovered methods panic via the
+// embedded nil interface — tests must not touch them.
+type fakeBillingDB struct {
+	db.Database
+	contracts map[string]*db.BillingContract // "type|key" -> contract
+	orgIDs    map[string]string
+}
+
+func (f *fakeBillingDB) GetActiveBillingContract(targetType, targetKey string) (*db.BillingContract, error) {
+	return f.contracts[targetType+"|"+targetKey], nil
+}
+
+func (f *fakeBillingDB) GetDeviceOrgID(deviceID string) (string, error) {
+	return f.orgIDs[deviceID], nil
+}
+
+func contractFor(key string, status string, validUntil *time.Time) *db.BillingContract {
+	return &db.BillingContract{
+		ID:               "c-" + key,
+		TargetType:       db.BillingTargetDevice,
+		TargetKey:        key,
+		PackageID:        "pkg",
+		Status:           status,
+		RemainingMinutes: 60,
+		HourlyRate:       100,
+		Currency:         "PLN",
+		ValidUntil:       validUntil,
+	}
+}
+
+func TestCheckConnectionContractExpiry(t *testing.T) {
+	past := time.Now().UTC().Add(-time.Hour)
+	future := time.Now().UTC().Add(24 * time.Hour)
+
+	cases := []struct {
+		name       string
+		contract   *db.BillingContract
+		wantAllow  bool
+		wantReason string
+	}{
+		{"active no expiry", contractFor("dev1", "active", nil), true, ""},
+		{"active future expiry", contractFor("dev2", "active", &future), true, ""},
+		{"status expired", contractFor("dev3", "expired", nil), false, "contract_expired"},
+		{"valid_until in the past", contractFor("dev4", "active", &past), false, "contract_expired"},
+		{"suspended", contractFor("dev5", "suspended", nil), false, "billing_suspended"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fdb := &fakeBillingDB{
+				contracts: map[string]*db.BillingContract{
+					db.BillingTargetDevice + "|" + tc.contract.TargetKey: tc.contract,
+				},
+				orgIDs: map[string]string{tc.contract.TargetKey: "org1"},
+			}
+			svc := NewService(fdb, nil, 1, false)
+			got := svc.CheckConnection(tc.contract.TargetKey)
+			if got.Allowed != tc.wantAllow {
+				t.Fatalf("Allowed=%v want %v (reason=%q)", got.Allowed, tc.wantAllow, got.Reason)
+			}
+			if !tc.wantAllow && got.Reason != tc.wantReason {
+				t.Fatalf("Reason=%q want %q", got.Reason, tc.wantReason)
+			}
+		})
+	}
+}
+
+func TestCheckConnectionTrafficQuota(t *testing.T) {
+	cases := []struct {
+		name       string
+		quota      int64
+		used       int64
+		wantAllow  bool
+		wantReason string
+	}{
+		{"quota exhausted (used == quota)", 1000, 1000, false, "traffic_quota_exceeded"},
+		{"quota exceeded (used > quota)", 1000, 1500, false, "traffic_quota_exceeded"},
+		{"quota unlimited (0)", 0, 1 << 40, true, ""},
+		{"under quota", 1000, 999, true, ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := contractFor("qdev-"+tc.name, "active", nil)
+			c.QuotaBytes = tc.quota
+			c.UsedBytes = tc.used
+			fdb := &fakeBillingDB{
+				contracts: map[string]*db.BillingContract{
+					db.BillingTargetDevice + "|" + c.TargetKey: c,
+				},
+				orgIDs: map[string]string{c.TargetKey: "org1"},
+			}
+			svc := NewService(fdb, nil, 1, false)
+			got := svc.CheckConnection(c.TargetKey)
+			if got.Allowed != tc.wantAllow {
+				t.Fatalf("Allowed=%v want %v (reason=%q)", got.Allowed, tc.wantAllow, got.Reason)
+			}
+			if !tc.wantAllow && got.Reason != tc.wantReason {
+				t.Fatalf("Reason=%q want %q", got.Reason, tc.wantReason)
+			}
+			if !got.HasBilling {
+				t.Fatalf("HasBilling=false, want true for quota-relevant contract")
+			}
+		})
 	}
 }

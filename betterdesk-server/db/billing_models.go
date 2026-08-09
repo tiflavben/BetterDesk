@@ -35,6 +35,8 @@ type BillingContract struct {
 	Currency         string     `json:"currency"`
 	ValidFrom        *time.Time `json:"valid_from,omitempty"`
 	ValidUntil       *time.Time `json:"valid_until,omitempty"`
+	QuotaBytes       int64      `json:"quota_bytes,omitempty"` // traffic quota (0 = unlimited)
+	UsedBytes        int64      `json:"used_bytes,omitempty"`  // cumulative bytes consumed
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 	PackageName      string     `json:"package_name,omitempty"`
@@ -71,7 +73,7 @@ type BillingSession struct {
 	DeviceName           string     `json:"device_name,omitempty"`
 	RelayUUID            string     `json:"relay_uuid,omitempty"`
 	Transport            string     `json:"transport"`
-	Status               string     `json:"status"` // active, pending_report, closed
+	Status               string     `json:"status"`        // active, pending_report, closed
 	BillingPhase         string     `json:"billing_phase"` // included, overage
 	StartedAt            time.Time  `json:"started_at"`
 	EndedAt              *time.Time `json:"ended_at,omitempty"`

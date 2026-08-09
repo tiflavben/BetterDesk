@@ -23,6 +23,14 @@ import (
 	"github.com/unitronix/betterdesk-server/ratelimit"
 )
 
+// TrafficSink receives traffic metering reports. RecordTraffic is called once
+// per relay session, after the session ends, with the total number of bytes
+// relayed in both directions (each byte counted once per underlying conn:
+// read from one peer plus write to the other).
+type TrafficSink interface {
+	RecordTraffic(uuid string, bytes int64)
+}
+
 // Server is the relay server instance.
 type Server struct {
 	cfg            *config.Config
@@ -45,6 +53,9 @@ type Server struct {
 
 	onRelayStart func(uuid string)
 	onRelayEnd   func(uuid string)
+
+	// trafficSink receives per-session byte totals when a session ends.
+	trafficSink TrafficSink
 }
 
 // Indirection for testing.
@@ -129,6 +140,13 @@ func (s *Server) SetAuthorizationRegistry(registry AuthorizationStore) {
 func (s *Server) SetBillingCallbacks(onStart, onEnd func(uuid string)) {
 	s.onRelayStart = onStart
 	s.onRelayEnd = onEnd
+}
+
+// SetTrafficSink registers a sink that receives the total number of bytes
+// relayed for each session when it ends. A nil argument (or nil sink field)
+// disables traffic reporting; the setter itself is always safe to call.
+func (s *Server) SetTrafficSink(sink TrafficSink) {
+	s.trafficSink = sink
 }
 
 // Start launches the relay TCP listener.
@@ -361,17 +379,22 @@ func (s *Server) startRelay(conn1, conn2 net.Conn, uuid string) {
 	ic1 := &idleTimeoutConn{Conn: conn1, timeout: idleTimeout}
 	ic2 := &idleTimeoutConn{Conn: conn2, timeout: idleTimeout}
 
+	// Count real wire bytes in each direction (innermost wrapper, so the
+	// tally reflects actual bytes relayed regardless of bandwidth limiting).
+	cc1 := &countingConn{Conn: ic1}
+	cc2 := &countingConn{Conn: ic2}
+
 	// Set up readers/writers with optional bandwidth limiting
-	var r1 io.Reader = ic1
-	var r2 io.Reader = ic2
-	var w1 io.Writer = ic1
-	var w2 io.Writer = ic2
+	var r1 io.Reader = cc1
+	var r2 io.Reader = cc2
+	var w1 io.Writer = cc1
+	var w2 io.Writer = cc2
 
 	if s.bwLimiter != nil {
-		r1 = s.bwLimiter.WrapReader(ic1)
-		r2 = s.bwLimiter.WrapReader(ic2)
-		w1 = s.bwLimiter.WrapWriter(ic1)
-		w2 = s.bwLimiter.WrapWriter(ic2)
+		r1 = s.bwLimiter.WrapReader(cc1)
+		r2 = s.bwLimiter.WrapReader(cc2)
+		w1 = s.bwLimiter.WrapWriter(cc1)
+		w2 = s.bwLimiter.WrapWriter(cc2)
 	}
 
 	done := make(chan struct{})
@@ -390,6 +413,14 @@ func (s *Server) startRelay(conn1, conn2 net.Conn, uuid string) {
 
 	// Wait for one direction to finish, then clean up both
 	<-done
+
+	// Report total bytes relayed (both directions, both peers) to the
+	// traffic sink BEFORE onRelayEnd: the same-process sink (billing
+	// service) accumulates into the still-live active session — after
+	// onRelayEnd the session is deleted and the tally would be dropped.
+	if s.trafficSink != nil {
+		s.trafficSink.RecordTraffic(uuid, cc1.Bytes()+cc2.Bytes())
+	}
 
 	if s.onRelayEnd != nil {
 		s.onRelayEnd(uuid)
@@ -431,6 +462,37 @@ func (c *idleTimeoutConn) Write(b []byte) (int, error) {
 		c.Conn.SetDeadline(time.Now().Add(c.timeout))
 	}
 	return n, err
+}
+
+// countingConn wraps a net.Conn and counts the bytes transferred through it
+// in both directions. Each direction is only ever accessed by a single
+// goroutine (one io.Copy per direction), but the counter uses an atomic so
+// Bytes() can be read safely from any goroutine (e.g. at session teardown
+// while a copy goroutine is still unwinding).
+type countingConn struct {
+	net.Conn
+	bytes atomic.Int64
+}
+
+func (c *countingConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if n > 0 {
+		c.bytes.Add(int64(n))
+	}
+	return n, err
+}
+
+func (c *countingConn) Write(b []byte) (int, error) {
+	n, err := c.Conn.Write(b)
+	if n > 0 {
+		c.bytes.Add(int64(n))
+	}
+	return n, err
+}
+
+// Bytes returns the total number of bytes read and written through this conn.
+func (c *countingConn) Bytes() int64 {
+	return c.bytes.Load()
 }
 
 // cleanupPending periodically removes stale pending connections.

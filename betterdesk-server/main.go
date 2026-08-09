@@ -6,6 +6,7 @@ import (
 	"context"
 	cryptoRand "crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -211,16 +212,22 @@ func main() {
 	// Initialize the relay ticket store. Relay-only mode cannot pair clients
 	// with an in-process store (no signal server), so it forces the shared
 	// DB-backed store so tickets authorized by a remote signal are claimable.
+	// ticketDB is also used as the cross-process traffic metering sink for
+	// relay-only instances (relay_traffic table) — hence the function scope.
+	var ticketDB *sql.DB
 	if cfg.RelayTicketStore != "db" && cfg.Mode == "relay" {
 		log.Printf("WARN: relay-only mode requires a shared ticket store; switching to db store")
 		cfg.RelayTicketStore = "db"
 	}
 	if cfg.RelayTicketStore == "db" {
-		ticketDB, err := db.OpenRelayTicketStore(cfg.DBPath, cfg.DBPath)
+		ticketDB, err = db.OpenRelayTicketStore(cfg.DBPath, cfg.DBPath)
 		if err != nil {
 			log.Fatalf("Failed to open relay ticket store: %v", err)
 		}
 		defer ticketDB.Close()
+		if err := db.EnsureRelayTrafficTable(ticketDB); err != nil {
+			log.Fatalf("Failed to ensure relay_traffic table: %v", err)
+		}
 		registry, err := relay.NewDBAuthorizationRegistry(ticketDB)
 		if err != nil {
 			log.Fatalf("Failed to initialize DB relay ticket registry: %v", err)
@@ -404,6 +411,9 @@ func main() {
 
 		relaySrv := relay.New(cfg)
 		relaySrv.SetBandwidthLimiter(bwLimiter)
+		// Same-process traffic metering: billing service accumulates bytes in
+		// memory (RecordTraffic updates active sessions directly).
+		relaySrv.SetTrafficSink(billingSvc)
 		if connLimiter != nil {
 			relaySrv.SetConnLimiter(connLimiter)
 		}
@@ -509,10 +519,20 @@ func main() {
 
 	case "signal":
 		log.Printf("Starting signal + API servers...")
+		// Cross-process traffic accounting: relay-only instances write
+		// relay_traffic rows into the shared ticket store; the billing
+		// ticker consumes them into active sessions.
+		if ticketDB != nil {
+			billingSvc.SetTrafficStore(ticketDB)
+		}
 		sig := sigServer.New(cfg, kp, database)
 		sig.SetBlocklist(blocklist)
 		sig.SetRateLimiter(ipLimiter)
 		sig.SetAuditLogger(auditLogger)
+		// Billing enforcement (minute contracts, expiry, traffic quota) must
+		// be attached in every mode that runs a signal server — previously
+		// only wired in -mode all, silently disabling billing in signal mode.
+		sig.SetBillingService(billingSvc)
 		if err := sig.Start(ctx); err != nil {
 			log.Fatalf("Failed to start signal server: %v", err)
 		}
@@ -523,6 +543,7 @@ func main() {
 		apiSrv.SetBlocklist(blocklist)
 		apiSrv.SetBandwidthLimiter(bwLimiter)
 		apiSrv.SetAuditLogger(auditLogger)
+		apiSrv.SetBillingService(billingSvc)
 		apiSrv.SetEventBus(sig.EventBus())
 		apiSrv.SetMetrics(mc)
 		apiSrv.SetJWTManager(jwtManager)
@@ -544,6 +565,10 @@ func main() {
 		log.Printf("Starting relay server only...")
 		relaySrv := relay.New(cfg)
 		relaySrv.SetBandwidthLimiter(bwLimiter)
+		// Cross-process traffic metering: write totals to the shared ticket
+		// store (relay_traffic table), consumed by the signal-side billing
+		// ticker.
+		relaySrv.SetTrafficSink(dbTrafficSink{db: ticketDB})
 		if connLimiter != nil {
 			relaySrv.SetConnLimiter(connLimiter)
 		}
@@ -878,4 +903,22 @@ func parseFlags() *config.Config {
 	}
 
 	return cfg
+}
+
+// dbTrafficSink relays traffic-metering reports from a relay-only instance
+// into the shared relay_traffic table, where the signal-side billing ticker
+// consumes them. Used only when the relay process runs standalone (cross-
+// process accounting); in -mode all the billing service is the sink itself.
+type dbTrafficSink struct {
+	db *sql.DB
+}
+
+// RecordTraffic implements relay.TrafficSink.
+func (s dbTrafficSink) RecordTraffic(uuid string, bytes int64) {
+	if s.db == nil || uuid == "" || bytes <= 0 {
+		return
+	}
+	if err := db.UpsertRelayTraffic(s.db, uuid, bytes); err != nil {
+		log.Printf("[relay] traffic meter upsert failed for %s: %v", uuid, err)
+	}
 }

@@ -367,6 +367,8 @@ func (s *SQLiteDB) Migrate() error {
 			currency TEXT NOT NULL DEFAULT 'PLN',
 			valid_from TEXT,
 			valid_until TEXT,
+			quota_bytes INTEGER NOT NULL DEFAULT 0,
+			used_bytes INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT DEFAULT (datetime('now')),
 			updated_at TEXT DEFAULT (datetime('now')),
 			UNIQUE(target_type, target_key),
@@ -504,6 +506,9 @@ func (s *SQLiteDB) Migrate() error {
 		// peers/users: Pro strategy assignment GUIDs
 		{"peers", "guid", `ALTER TABLE peers ADD COLUMN guid TEXT DEFAULT ''`},
 		{"users", "guid", `ALTER TABLE users ADD COLUMN guid TEXT DEFAULT ''`},
+		// billing_contracts: traffic quota (quota_bytes / used_bytes)
+		{"billing_contracts", "quota_bytes", `ALTER TABLE billing_contracts ADD COLUMN quota_bytes INTEGER NOT NULL DEFAULT 0`},
+		{"billing_contracts", "used_bytes", `ALTER TABLE billing_contracts ADD COLUMN used_bytes INTEGER NOT NULL DEFAULT 0`},
 	}
 
 	for _, m := range columnMigrations {

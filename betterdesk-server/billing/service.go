@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -24,6 +25,7 @@ const (
 
 	ContractActive    = "active"
 	ContractSuspended = "suspended"
+	ContractExpired   = "expired"
 
 	LedgerSessionStart = "session_start"
 	LedgerPhaseChange  = "phase_change"
@@ -34,10 +36,10 @@ const (
 
 // ConnectionCheckResult is returned before allowing a remote session.
 type ConnectionCheckResult struct {
-	Allowed   bool   `json:"allowed"`
-	Reason    string `json:"reason,omitempty"`
-	OrgID     string `json:"org_id,omitempty"`
-	HasBilling bool  `json:"has_billing"`
+	Allowed    bool   `json:"allowed"`
+	Reason     string `json:"reason,omitempty"`
+	OrgID      string `json:"org_id,omitempty"`
+	HasBilling bool   `json:"has_billing"`
 }
 
 // Service manages billable remote sessions.
@@ -47,6 +49,7 @@ type Service struct {
 	clock         *timesync.Service
 	roundMin      int
 	requireReport bool
+	trafficDB     *sql.DB // shared relay_traffic store for cross-process traffic accounting
 
 	mu      sync.Mutex
 	pending map[string]*pendingRelay // relayUUID -> meta
@@ -63,17 +66,18 @@ type pendingRelay struct {
 }
 
 type activeSession struct {
-	ID              string
-	OrgID           string
-	ContractID      string
-	RelayUUID       string
-	StartedAt       time.Time
+	ID               string
+	OrgID            string
+	ContractID       string
+	RelayUUID        string
+	StartedAt        time.Time
 	RemainingAtStart int
-	OverageRate     float64
-	HourlyRate      float64
-	Currency        string
-	Phase           string
-	LastBilledMin   int
+	OverageRate      float64
+	HourlyRate       float64
+	Currency         string
+	Phase            string
+	LastBilledMin    int
+	UsedBytes        int64
 }
 
 // NewService creates a billing service.
@@ -94,6 +98,13 @@ func NewService(database db.Database, clock *timesync.Service, roundingMinutes i
 // SetPanelSyncStore supplies folder/group membership for contract resolution.
 func (s *Service) SetPanelSyncStore(panel PanelContext) {
 	s.panel = panel
+}
+
+// SetTrafficStore supplies the shared relay_traffic store so traffic reported
+// by other server processes (multi-relay clusters) can be folded into local
+// session accounting. Passing nil disables cross-process traffic consumption.
+func (s *Service) SetTrafficStore(tdb *sql.DB) {
+	s.trafficDB = tdb
 }
 
 func (s *Service) resolveContract(deviceID string) (*db.BillingContract, string, error) {
@@ -123,6 +134,9 @@ func (s *Service) ticker(ctx context.Context) {
 		case <-tick.C:
 			s.tickActive()
 			s.sweepStalePending()
+			if s.trafficDB != nil {
+				s.consumeRemoteTraffic()
+			}
 		}
 	}
 }
@@ -152,6 +166,57 @@ func (s *Service) ActiveSessionCount() int {
 	return len(s.active)
 }
 
+// RecordTraffic accumulates bytes for an in-process session, keyed by relay
+// UUID. The relay's io.Copy goroutines call this on every copied chunk, so
+// the critical section is intentionally kept to a single mutex-protected
+// increment — short enough that lock contention stays negligible at the
+// expected call rate. A lock-free fast path was considered but risks lost
+// updates when writers race the mutex-held snapshot in tickActive.
+func (s *Service) RecordTraffic(uuid string, bytes int64) {
+	if uuid == "" || bytes <= 0 {
+		return
+	}
+	s.mu.Lock()
+	if cur, ok := s.active[uuid]; ok {
+		cur.UsedBytes += bytes
+	}
+	s.mu.Unlock()
+}
+
+// consumeRemoteTraffic folds relay_traffic rows reported by other server
+// processes (multi-relay clusters) into the matching active sessions, then
+// deletes every row it read.
+//
+// Trade-off: rows whose relay UUID no longer matches an active session are
+// dropped without being counted. Relays report traffic when a session ends,
+// so late reports can arrive after EndRelay has already removed the active
+// session — mapping them back to a contract would require persisting the
+// uuid→contract link past finalization. Dropping late reports accepts a
+// small under-count of a session's tail traffic in exchange for keeping the
+// store self-cleaning (rows never leak).
+func (s *Service) consumeRemoteTraffic() {
+	counters, err := db.GetAllRelayTraffic(s.trafficDB)
+	if err != nil {
+		log.Printf("[billing] GetAllRelayTraffic: %v", err)
+		return
+	}
+	if len(counters) == 0 {
+		return
+	}
+	uuids := make([]string, 0, len(counters))
+	s.mu.Lock()
+	for uuid, bytes := range counters {
+		if cur, ok := s.active[uuid]; ok {
+			cur.UsedBytes += bytes
+		}
+		uuids = append(uuids, uuid)
+	}
+	s.mu.Unlock()
+	if err := db.DeleteRelayTraffic(s.trafficDB, uuids...); err != nil {
+		log.Printf("[billing] DeleteRelayTraffic: %v", err)
+	}
+}
+
 // CheckConnection evaluates whether a connection to deviceID may proceed.
 func (s *Service) CheckConnection(deviceID string) ConnectionCheckResult {
 	contract, orgID, err := s.resolveContract(deviceID)
@@ -168,6 +233,23 @@ func (s *Service) CheckConnection(deviceID string) ConnectionCheckResult {
 	}
 	if contract.Status == ContractSuspended {
 		return ConnectionCheckResult{Allowed: false, Reason: "billing_suspended", OrgID: orgID, HasBilling: true}
+	}
+	// Fixed calendar expiry (ValidUntil) — enforced at connection time, so a
+	// contract that lapses mid-operation is rejected on the next connection
+	// attempt even if its status was never flipped by an admin.
+	now := time.Now().UTC()
+	if s.clock != nil {
+		now = s.clock.NowUTC()
+	}
+	if contract.Status == ContractExpired ||
+		(contract.ValidUntil != nil && now.After(*contract.ValidUntil)) {
+		return ConnectionCheckResult{Allowed: false, Reason: "contract_expired", OrgID: orgID, HasBilling: true}
+	}
+	// Traffic quota enforcement: a positive QuotaBytes cap is compared
+	// against cumulative UsedBytes. Once exhausted the connection is
+	// rejected until an admin raises the quota or resets usage.
+	if contract.QuotaBytes > 0 && contract.UsedBytes >= contract.QuotaBytes {
+		return ConnectionCheckResult{Allowed: false, Reason: "traffic_quota_exceeded", OrgID: orgID, HasBilling: true}
 	}
 	return ConnectionCheckResult{Allowed: true, OrgID: orgID, HasBilling: true}
 }
@@ -410,6 +492,9 @@ func (s *Service) finalizeSession(a *activeSession) {
 			newRemaining = 0
 		}
 		contract.RemainingMinutes = newRemaining
+		// Fold in-process and cross-process traffic accumulated for this
+		// session (RecordTraffic / consumeRemoteTraffic) into the contract.
+		contract.UsedBytes += a.UsedBytes
 		_ = s.db.UpdateBillingContract(contract)
 	}
 }

@@ -84,9 +84,10 @@ func (pg *PostgresDB) DeleteBillingPackage(id string) error {
 
 func (pg *PostgresDB) CreateBillingContract(c *BillingContract) error {
 	_, err := pg.pool.Exec(pg.ctx,
-		`INSERT INTO billing_contracts (id, target_type, target_key, package_id, status, remaining_minutes, overage_rate, hourly_rate, currency, valid_from, valid_until, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())`,
+		`INSERT INTO billing_contracts (id, target_type, target_key, package_id, status, remaining_minutes, overage_rate, hourly_rate, currency, quota_bytes, used_bytes, valid_from, valid_until, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())`,
 		c.ID, c.TargetType, c.TargetKey, c.PackageID, c.Status, c.RemainingMinutes, c.OverageRate, c.HourlyRate, c.Currency,
+		c.QuotaBytes, c.UsedBytes,
 		c.ValidFrom, c.ValidUntil,
 	)
 	return err
@@ -135,7 +136,7 @@ const pgBillingContractTargetNameSQL = `
 
 func (pg *PostgresDB) queryBillingContract(where string, args ...any) (*BillingContract, error) {
 	query := `SELECT c.id, c.target_type, c.target_key, c.package_id, c.status, c.remaining_minutes, c.overage_rate,
-		c.hourly_rate, c.currency, c.valid_from, c.valid_until, c.created_at, c.updated_at,
+		c.hourly_rate, c.currency, c.quota_bytes, c.used_bytes, c.valid_from, c.valid_until, c.created_at, c.updated_at,
 		COALESCE(p.name, ''), ` + pgBillingContractTargetNameSQL + `
 		FROM billing_contracts c
 		LEFT JOIN billing_packages p ON p.id = c.package_id ` + where
@@ -145,7 +146,7 @@ func (pg *PostgresDB) queryBillingContract(where string, args ...any) (*BillingC
 	var validFrom, validUntil *time.Time
 	err := pg.pool.QueryRow(pg.ctx, query, args...).Scan(
 		&c.ID, &c.TargetType, &c.TargetKey, &c.PackageID, &c.Status, &c.RemainingMinutes, &overage,
-		&c.HourlyRate, &c.Currency, &validFrom, &validUntil, &c.CreatedAt, &c.UpdatedAt,
+		&c.HourlyRate, &c.Currency, &c.QuotaBytes, &c.UsedBytes, &validFrom, &validUntil, &c.CreatedAt, &c.UpdatedAt,
 		&c.PackageName, &c.TargetName,
 	)
 	if err != nil {
@@ -190,7 +191,7 @@ func (pg *PostgresDB) ListBillingContracts(filter BillingContractFilter) ([]*Bil
 	}
 
 	query := `SELECT c.id, c.target_type, c.target_key, c.package_id, c.status, c.remaining_minutes, c.overage_rate,
-		c.hourly_rate, c.currency, c.valid_from, c.valid_until, c.created_at, c.updated_at,
+		c.hourly_rate, c.currency, c.quota_bytes, c.used_bytes, c.valid_from, c.valid_until, c.created_at, c.updated_at,
 		COALESCE(p.name, ''), ` + pgBillingContractTargetNameSQL + `
 		FROM billing_contracts c
 		LEFT JOIN billing_packages p ON p.id = c.package_id`
@@ -212,7 +213,7 @@ func (pg *PostgresDB) ListBillingContracts(filter BillingContractFilter) ([]*Bil
 		var validFrom, validUntil *time.Time
 		if err := rows.Scan(
 			&c.ID, &c.TargetType, &c.TargetKey, &c.PackageID, &c.Status, &c.RemainingMinutes, &overage,
-			&c.HourlyRate, &c.Currency, &validFrom, &validUntil, &c.CreatedAt, &c.UpdatedAt,
+			&c.HourlyRate, &c.Currency, &c.QuotaBytes, &c.UsedBytes, &validFrom, &validUntil, &c.CreatedAt, &c.UpdatedAt,
 			&c.PackageName, &c.TargetName,
 		); err != nil {
 			return nil, err
@@ -233,8 +234,9 @@ func (pg *PostgresDB) ListBillingOrgContracts(filter BillingContractFilter) ([]*
 func (pg *PostgresDB) UpdateBillingContract(c *BillingContract) error {
 	_, err := pg.pool.Exec(pg.ctx,
 		`UPDATE billing_contracts SET status = $1, remaining_minutes = $2, overage_rate = $3, hourly_rate = $4, currency = $5,
-		 valid_from = $6, valid_until = $7, updated_at = NOW() WHERE id = $8`,
+		 quota_bytes = $6, used_bytes = $7, valid_from = $8, valid_until = $9, updated_at = NOW() WHERE id = $10`,
 		c.Status, c.RemainingMinutes, c.OverageRate, c.HourlyRate, c.Currency,
+		c.QuotaBytes, c.UsedBytes,
 		c.ValidFrom, c.ValidUntil, c.ID,
 	)
 	return err

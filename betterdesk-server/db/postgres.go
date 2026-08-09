@@ -396,6 +396,8 @@ func (pg *PostgresDB) Migrate() error {
 			currency TEXT NOT NULL DEFAULT 'PLN',
 			valid_from TIMESTAMPTZ,
 			valid_until TIMESTAMPTZ,
+			quota_bytes BIGINT NOT NULL DEFAULT 0,
+			used_bytes BIGINT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			UNIQUE(target_type, target_key)
@@ -586,6 +588,9 @@ func (pg *PostgresDB) Migrate() error {
 		// peers/users: Pro strategy assignment GUIDs
 		`ALTER TABLE peers ADD COLUMN IF NOT EXISTS guid TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS guid TEXT NOT NULL DEFAULT ''`,
+		// billing_contracts: traffic quota (quota_bytes / used_bytes)
+		`ALTER TABLE billing_contracts ADD COLUMN IF NOT EXISTS quota_bytes BIGINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE billing_contracts ADD COLUMN IF NOT EXISTS used_bytes BIGINT NOT NULL DEFAULT 0`,
 	}
 
 	for _, ddl := range columnMigrations {
@@ -1318,7 +1323,7 @@ func scanUser(row pgx.Row) (*User, error) {
 }
 
 // userSelectColsPG is the shared SELECT list for GetUser/GetUserByID/ListUsers.
-// COALESCE(totp_secret, '') matches SQLite (Issue #292/#301): Node panel inserts
+// COALESCE(totp_secret, ”) matches SQLite (Issue #292/#301): Node panel inserts
 // often leave totp_secret NULL; scanning NULL into Go string fails and breaks
 // GET /api/users, which in turn triggered mirrorCreate retry loops.
 const userSelectColsPG = `id, username, password_hash, role, COALESCE(totp_secret, ''), totp_enabled,
