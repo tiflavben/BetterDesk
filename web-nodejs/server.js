@@ -261,6 +261,7 @@ app.use('/', routes);
 // CSRF token mismatch
 app.use((err, req, res, next) => {
     if (err.code === 'EBADCSRFTOKEN' || err.message?.includes('csrf') || err.message?.includes('CSRF')) {
+
         res.status(403);
         // Detect likely SSL→HTTP transition: cookie missing because browser held Secure cookie
         const likelySslTransition = !config.httpsEnabled && !req.secure;

@@ -189,6 +189,7 @@ router.get('/remote', rdClientPageLimiter, requireAuth, (req, res) => {
  * GET /remote/:deviceId - Unified remote desktop viewer (single entry point).
  */
 router.get('/remote/:deviceId', rdClientPageLimiter, requireRemoteAccess, async (req, res) => {
+    try {
     const deviceId = req.params.deviceId;
 
     if (!deviceId || deviceId === 'login' || !/^[A-Za-z0-9_-]{3,64}$/.test(deviceId)) {
@@ -246,6 +247,7 @@ router.get('/remote/:deviceId', rdClientPageLimiter, requireRemoteAccess, async 
     res.render('remote', {
         title: `${req.t('remote.title')} - ${deviceId}`,
         activePage: 'remote',
+        user: req.session && req.session.user ? req.session.user : null,
         deviceId: deviceId,
         device: device || { id: deviceId, hostname: '', platform: '', note: '' },
         serverPubKey: await resolveServerPubKey(),
@@ -253,6 +255,16 @@ router.get('/remote/:deviceId', rdClientPageLimiter, requireRemoteAccess, async 
         guestToken: req.guestToken || getGuestTokenFromQuery(req) || '',
         layout: 'viewer'
     });
+    } catch (err) {
+        logger.error('[remote/:deviceId] render failed:', err);
+        if (!res.headersSent) {
+            res.status(500).render('errors/500', {
+                title: req.t ? req.t('errors.server_error') : 'Server Error',
+                activePage: 'error',
+                error: err.message
+            });
+        }
+    }
 });
 
 /**
