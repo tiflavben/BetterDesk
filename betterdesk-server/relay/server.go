@@ -172,7 +172,7 @@ func (s *Server) SetHeartbeatDB(db *sql.DB, nodeID string) {
 }
 
 func (s *Server) heartbeatLoop() {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	prevCPU := readCPUStat()
 	prevBytes := s.TotalBytes.Load()
@@ -188,8 +188,8 @@ func (s *Server) heartbeatLoop() {
 			cpuPct := cpuPercent(prevCPU, curCPU)
 			prevCPU = curCPU
 			curBytes := s.TotalBytes.Load()
-			// bandwidth = bytes delta * 8 bits / interval (10s) -> Mbps
-			bwMbps := float64(curBytes-prevBytes) * 8 / 1e6 / 10
+			// bandwidth = bytes delta * 8 bits / interval (5s) -> Mbps
+			bwMbps := float64(curBytes-prevBytes) * 8 / 1e6 / 5
 			prevBytes = curBytes
 			_, memPct := readMemStats()
 			if err := db.UpsertRelayHeartbeat(s.heartbeatDB, s.heartbeatNodeID, s.heartbeatNodeID,

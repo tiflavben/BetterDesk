@@ -60,6 +60,16 @@
         renderArchDiagram();
         renderSummaryCards();
         renderRelayHealthGrid();
+        // Live telemetry: refresh relay status/metrics every 10s while the
+        // overview (or relays list) is visible.
+        if (!window._scalingPollStarted) {
+            window._scalingPollStarted = true;
+            setInterval(() => {
+                if (document.getElementById('relay-health-grid') || document.getElementById('relays-tbody')) {
+                    loadRelays();
+                }
+            }, 10000);
+        }
     }
 
     function renderSummaryCards() {
@@ -134,7 +144,7 @@
                     </div>
                     <div class="relay-health-metrics">
                         ${metricBar('CPU', cpuPct)}
-                        ${metricBar(_('scaling.col_bandwidth'), bwPct)}
+                        ${metricBar(_('scaling.col_bandwidth'), bwPct, (r.bandwidth_mbps || 0).toFixed(1) + ' Mbps')}
                         ${metricBar('RAM', memPct)}
                         ${metricBar(_('scaling.col_sessions'), sessPct)}
                     </div>
@@ -142,12 +152,12 @@
         }).join('');
     }
 
-    function metricBar(label, pct) {
+    function metricBar(label, pct, valueText) {
         const cls = pct > 85 ? 'high' : pct > 60 ? 'med' : 'low';
         return `<div class="relay-metric">
             <div class="relay-metric-label">${escHtml(label)}</div>
             <div class="relay-metric-bar"><div class="relay-metric-fill ${cls}" style="width:${pct}%"></div></div>
-            <div class="relay-metric-value">${pct}%</div>
+            <div class="relay-metric-value">${valueText !== undefined ? valueText : pct + '%'}</div>
         </div>`;
     }
 
@@ -161,6 +171,11 @@
             _relays = Array.isArray(data) ? data : (data.data || data.relays || []);
         } catch { _relays = []; }
         renderRelaysTable();
+        // Keep overview cards/health grid in sync when polling (they render
+        // only when their elements exist on the current tab).
+        renderArchDiagram();
+        renderSummaryCards();
+        renderRelayHealthGrid();
     }
 
     function renderRelaysTable() {
