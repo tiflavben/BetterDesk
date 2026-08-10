@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	osSignal "os/signal"
 	"path/filepath"
@@ -575,6 +576,25 @@ func main() {
 		// store (relay_traffic table), consumed by the signal-side billing
 		// ticker.
 		relaySrv.SetTrafficSink(dbTrafficSink{db: ticketDB})
+		if ticketDB != nil {
+			// Per-node heartbeat (active sessions + cumulative bytes) so the
+			// console can show real per-relay telemetry. RELAY_ADDR env (set
+			// by deploy-relay.sh) is the stable node identity; fall back to
+			// the local outbound IP + relay port.
+			addr := os.Getenv("RELAY_ADDR")
+			if addr == "" {
+				if ip := localOutboundIP(); ip != "" {
+					addr = fmt.Sprintf("%s:%d", ip, cfg.RelayPort)
+				}
+			}
+			if addr != "" {
+				if err := db.EnsureRelayHeartbeatTable(ticketDB); err != nil {
+					log.Printf("relay heartbeat table: %v", err)
+				} else {
+					relaySrv.SetHeartbeatDB(ticketDB, addr)
+				}
+			}
+		}
 		if connLimiter != nil {
 			relaySrv.SetConnLimiter(connLimiter)
 		}
@@ -909,6 +929,22 @@ func parseFlags() *config.Config {
 	}
 
 	return cfg
+}
+
+// localOutboundIP returns the machine's outbound source IP by asking the
+// routing table for the path to a public address (UDP dial does not send
+// packets, so it works even on NAT-only hosts).
+func localOutboundIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	host, _, err := net.SplitHostPort(conn.LocalAddr().String())
+	if err != nil {
+		return ""
+	}
+	return host
 }
 
 // dbTrafficSink relays traffic-metering reports from a relay-only instance

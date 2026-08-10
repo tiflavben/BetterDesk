@@ -5,6 +5,7 @@ package relay
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/unitronix/betterdesk-server/codec"
 	"github.com/unitronix/betterdesk-server/config"
+	"github.com/unitronix/betterdesk-server/db"
 	pb "github.com/unitronix/betterdesk-server/proto"
 	"github.com/unitronix/betterdesk-server/ratelimit"
 )
@@ -50,6 +52,12 @@ type Server struct {
 	// Stats
 	ActiveSessions atomic.Int64
 	TotalRelayed   atomic.Int64
+	TotalBytes     atomic.Int64 // cumulative relayed bytes (both directions)
+
+	// Heartbeat: relay-only nodes report liveness + session counts to the
+	// shared store so the console can show per-node telemetry.
+	heartbeatDB     *sql.DB
+	heartbeatNodeID string
 
 	onRelayStart func(uuid string)
 	onRelayEnd   func(uuid string)
@@ -147,6 +155,38 @@ func (s *Server) SetBillingCallbacks(onStart, onEnd func(uuid string)) {
 // disables traffic reporting; the setter itself is always safe to call.
 func (s *Server) SetTrafficSink(sink TrafficSink) {
 	s.trafficSink = sink
+}
+
+// SetHeartbeatDB enables periodic liveness reporting to the shared store
+// (relay-only nodes): every 10s the node upserts its active-session count and
+// cumulative relayed bytes so the console can show per-node telemetry.
+// nodeID is the node's stable identity (e.g. "192.168.1.102:21117").
+func (s *Server) SetHeartbeatDB(db *sql.DB, nodeID string) {
+	if db == nil || nodeID == "" {
+		return
+	}
+	s.heartbeatDB = db
+	s.heartbeatNodeID = nodeID
+	go s.heartbeatLoop()
+}
+
+func (s *Server) heartbeatLoop() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-ticker.C:
+			if s.heartbeatDB == nil {
+				return
+			}
+			if err := db.UpsertRelayHeartbeat(s.heartbeatDB, s.heartbeatNodeID, s.heartbeatNodeID,
+				s.ActiveSessions.Load(), s.TotalBytes.Load()); err != nil {
+				log.Printf("[relay] heartbeat: %v", err)
+			}
+		}
+	}
 }
 
 // Start launches the relay TCP listener.
@@ -421,6 +461,7 @@ func (s *Server) startRelay(conn1, conn2 net.Conn, uuid string) {
 	if s.trafficSink != nil {
 		s.trafficSink.RecordTraffic(uuid, cc1.Bytes()+cc2.Bytes())
 	}
+	s.TotalBytes.Add(cc1.Bytes() + cc2.Bytes())
 
 	if s.onRelayEnd != nil {
 		s.onRelayEnd(uuid)

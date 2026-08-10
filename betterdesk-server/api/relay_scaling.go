@@ -2,12 +2,11 @@ package api
 
 import (
 	"database/sql"
-	"encoding/json"
-	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"time"
+
+	"github.com/unitronix/betterdesk-server/db"
 )
 
 // relayScalingTelemetry reports live status of the configured relay tier
@@ -16,9 +15,34 @@ import (
 func (s *Server) handleRelayScalingRelays(w http.ResponseWriter, r *http.Request) {
 	relays := s.cfg.GetRelayServers()
 	type relayStatus struct {
-		Address   string `json:"address"`
-		Status    string `json:"status"`
-		LatencyMs int64  `json:"latency_ms"`
+		Address        string `json:"address"`
+		Status         string `json:"status"`
+		LatencyMs      int64  `json:"latency_ms"`
+		ActiveSessions int64  `json:"active_sessions"`
+		TotalBytes     int64  `json:"total_bytes"`
+	}
+	// Per-node heartbeat rows (relay-only nodes upsert every 10s).
+	var heartbeats map[string]db.RelayHeartbeat
+	if s.relayTicketDB != nil {
+		if hb, err := db.GetAllRelayHeartbeats(s.relayTicketDB); err == nil {
+			heartbeats = hb
+		}
+	}
+	matchHeartbeat := func(addr string) (int64, int64) {
+		ip := addr
+		if h, _, err := net.SplitHostPort(addr); err == nil {
+			ip = h
+		}
+		for _, hb := range heartbeats {
+			hbIP := hb.Addr
+			if h, _, err := net.SplitHostPort(hb.Addr); err == nil {
+				hbIP = h
+			}
+			if hbIP == ip {
+				return hb.ActiveSessions, hb.TotalBytes
+			}
+		}
+		return 0, 0
 	}
 	out := make([]relayStatus, 0, len(relays))
 	for _, addr := range relays {
@@ -32,6 +56,7 @@ func (s *Server) handleRelayScalingRelays(w http.ResponseWriter, r *http.Request
 			rs.Status = "online"
 			rs.LatencyMs = time.Since(start).Milliseconds()
 		}
+		rs.ActiveSessions, rs.TotalBytes = matchHeartbeat(addr)
 		out = append(out, rs)
 	}
 	if len(out) == 0 {
@@ -67,7 +92,3 @@ func (s *Server) handleRelayScalingRelays(w http.ResponseWriter, r *http.Request
 func (s *Server) SetRelayTicketDB(db *sql.DB) {
 	s.relayTicketDB = db
 }
-
-var _ = fmt.Sprintf // keep fmt import if unused in future edits
-var _ = strings.TrimSpace
-var _ = json.Valid

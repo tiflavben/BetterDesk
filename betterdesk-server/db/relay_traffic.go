@@ -41,6 +41,95 @@ func isPostgresDriver(db *sql.DB) bool {
 	return ok
 }
 
+// ---------------------------------------------------------------------------
+// relay_heartbeat — per-node liveness/session telemetry written by each relay
+// instance (relay-only nodes write the shared store; the signal/API side reads
+// it to surface per-node active sessions and cumulative traffic).
+// ---------------------------------------------------------------------------
+
+const (
+	relayHeartbeatDDLSQLite = `CREATE TABLE IF NOT EXISTS relay_heartbeat (
+		node_id TEXT PRIMARY KEY,
+		addr TEXT NOT NULL DEFAULT '',
+		active_sessions INTEGER NOT NULL DEFAULT 0,
+		total_bytes BIGINT NOT NULL DEFAULT 0,
+		last_seen TEXT NOT NULL DEFAULT (datetime('now'))
+	)`
+	relayHeartbeatDDLPostgres = `CREATE TABLE IF NOT EXISTS relay_heartbeat (
+		node_id TEXT PRIMARY KEY,
+		addr TEXT NOT NULL DEFAULT '',
+		active_sessions INTEGER NOT NULL DEFAULT 0,
+		total_bytes BIGINT NOT NULL DEFAULT 0,
+		last_seen TEXT NOT NULL DEFAULT NOW()
+	)`
+)
+
+// EnsureRelayHeartbeatTable creates the shared relay heartbeat table.
+func EnsureRelayHeartbeatTable(db *sql.DB) error {
+	if db == nil {
+		return fmt.Errorf("db: nil database for relay heartbeat table")
+	}
+	ddl := relayHeartbeatDDLSQLite
+	if isPostgresDriver(db) {
+		ddl = relayHeartbeatDDLPostgres
+	}
+	if _, err := db.Exec(ddl); err != nil {
+		return fmt.Errorf("db: relay heartbeat migrate: %w", err)
+	}
+	return nil
+}
+
+// UpsertRelayHeartbeat records (or refreshes) a relay node's liveness row.
+func UpsertRelayHeartbeat(db *sql.DB, nodeID, addr string, activeSessions, totalBytes int64) error {
+	if db == nil {
+		return fmt.Errorf("db: nil database for relay heartbeat upsert")
+	}
+	q := "INSERT INTO relay_heartbeat (node_id, addr, active_sessions, total_bytes) VALUES (?, ?, ?, ?) " +
+		"ON CONFLICT(node_id) DO UPDATE SET addr=excluded.addr, active_sessions=excluded.active_sessions, " +
+		"total_bytes=excluded.total_bytes, last_seen=datetime('now')"
+	if isPostgresDriver(db) {
+		q = "INSERT INTO relay_heartbeat (node_id, addr, active_sessions, total_bytes) VALUES ($1, $2, $3, $4) " +
+			"ON CONFLICT(node_id) DO UPDATE SET addr=EXCLUDED.addr, active_sessions=EXCLUDED.active_sessions, " +
+			"total_bytes=EXCLUDED.total_bytes, last_seen=NOW()"
+	}
+	_, err := db.Exec(q, nodeID, addr, activeSessions, totalBytes)
+	return err
+}
+
+// RelayHeartbeat is one row of the shared heartbeat table.
+type RelayHeartbeat struct {
+	NodeID         string
+	Addr           string
+	ActiveSessions int64
+	TotalBytes     int64
+	LastSeen       string
+}
+
+// GetAllRelayHeartbeats returns every relay node's latest heartbeat.
+func GetAllRelayHeartbeats(db *sql.DB) (map[string]RelayHeartbeat, error) {
+	if db == nil {
+		return nil, fmt.Errorf("db: nil database for relay heartbeat read")
+	}
+	q := "SELECT node_id, addr, active_sessions, total_bytes, last_seen FROM relay_heartbeat"
+	if isPostgresDriver(db) {
+		q = "SELECT node_id, addr, active_sessions, total_bytes, last_seen FROM relay_heartbeat"
+	}
+	rows, err := db.Query(q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]RelayHeartbeat{}
+	for rows.Next() {
+		var h RelayHeartbeat
+		if err := rows.Scan(&h.NodeID, &h.Addr, &h.ActiveSessions, &h.TotalBytes, &h.LastSeen); err != nil {
+			return nil, err
+		}
+		out[h.NodeID] = h
+	}
+	return out, rows.Err()
+}
+
 // sqlPlaceholders renders a SQLite-style statement with ? placeholders for the
 // backing driver (PostgreSQL's extended protocol requires $1..$n).
 func sqlPlaceholders(stmt string, pg bool) string {

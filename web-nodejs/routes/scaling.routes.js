@@ -147,7 +147,10 @@ router.get('/api/panel/scaling/relays', requireAuth, requirePermission('server.c
         const merged = relays.map(r => {
             const t = live.find(x => x.address === r.address)
                 || live.find(x => x.address && x.address.split(':')[0] === String(r.address).split(':')[0]);
-            return t ? { ...r, status: t.status, latency_ms: t.latency_ms } : r;
+            return t
+                ? { ...r, status: t.status, latency_ms: t.latency_ms,
+                    active_sessions: t.active_sessions || 0, total_bytes: t.total_bytes || 0 }
+                : r;
         });
         res.json({ data: merged, telemetry: telemetry.success ? telemetry.data : null });
     } catch (err) {
