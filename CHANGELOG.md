@@ -5,6 +5,48 @@
 
 ---
 
+## [3.5.29] — 2026-08-09
+
+### Added
+- **Support Agent Wails UI:** Default GUI is Wails (WebView2 / WebKit) with branded HTML shell; Fyne remains behind `fyneui` / `BETTERDESK_SUPPORT_FYNEUI=1`. Ships via rebuilt Support Agent (agent-source). Verify: window shows device ID / password without Mesa OpenGL DLL crashes.
+- **Support Agent multi-codec remote desktop:** `signalhost` negotiates RustDesk PreferCodec (Auto / VP8 / VP9 / AV1 / H264 / H265), probes HW encoders (NVENC/QSV/AMF/…), prefers Windows `ddagrab` then `gdigrab`. Ships via rebuilt Support Agent. Verify: RdClient codec menu switches encoder; Task Manager shows GPU encode when available.
+
+### Fixed
+- **Support Agent Windows console cascade:** Without a quiet capture path, PeerInfo / screenshot fallback spawned a visible PowerShell window per frame (and ffmpeg without `CREATE_NO_WINDOW`). Desktop capture on Windows now uses GDI→JPEG; helper `exec` calls hide the console. Ships via rebuilt Support Agent (agent-source). Verify: start agent + open a session — no flood of cmd/PowerShell windows.
+- **Support Agent Windows builds (sealbranding + mingw CC):** `build.sh` no longer exports mingw `CC`/`CXX` before `go run ./cmd/sealbranding`. Seal runs with `CGO_ENABLED=0`; mingw is applied only around the final Windows `go build`. This was mis-reported in the UI as “CGO / mingw required” while mingw was already installed. Ships via panel update (agent-source `build.sh` + `agentBuildWorker.js`).
+- **Support Agent AppImage as `betterdesk` user:** install toolchain now extracts `appimagetool` to `/usr/local/lib/appimagetool` with a shell wrapper (no FUSE / no write next to `/usr/local/bin`). Worker packs with writable `HOME`/`TMPDIR` under the build cache. Re-run `scripts/install-build-toolchain.sh` (or menu **B**) on hosts that still have the raw AppImage binary.
+- **Support Agent Windows crash `0xC0000135` / missing DLL:** Generator shipped incomplete Mesa `opengl32.dll` without `libgallium_wgl.dll`, which shadowed system OpenGL and blocked startup. Fetch/pack/embed now require the full DLL pair (or skip Mesa entirely). Agents already installed: delete `opengl32.dll` next to the exe if `libgallium_wgl.dll` is missing.
+
+### Changed
+- **Generator — Support Agent only:** primary CTA is New Support Agent; Agent Client / RdClient create buttons hidden. Defaults to `support-agent`. Optional branding is collapsed; build-platform checkboxes control which installers are queued. Toolchain banner probes mingw + appimagetool; branding-seal errors are classified correctly.
+
+---
+
+## [3.5.28] — 2026-08-09
+
+### Changed
+- _(none yet)_
+
+---
+
+## [3.5.27] — 2026-08-09
+
+### Changed
+- _(none yet)_
+
+---
+
+## [3.5.26] — 2026-08-09
+
+### Fixed
+- **Attestation Light theme contrast (#363):** Tier guide descriptions use `--text-primary`; IRON/TITANIUM/OBSIDIAN badge gradients stay readable on the dark chip; attestation cards use `--bg-secondary` (undefined `--bg-surface` removed). Ships via panel update (`server-attestation.css`). Verify: Light theme → Server Attestation → “What does each tier mean?” text and IRON/TITANIUM/OBSIDIAN badges are readable.
+- **Fleet org filter 404 (#364):** Fleet Management called non-existent `GET /api/panel/organizations`; it now uses `GET /api/panel/org` (same as Policies). Ships via panel update (`fleet.js`). Verify: Fleet page Network tab shows `/api/panel/org` (no 404), org dropdowns populate.
+
+### Changed
+- _(none yet)_
+
+---
+
 ## [3.5.25] — 2026-08-08
 
 ### Changed
@@ -2754,3 +2796,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 [3.5.23]: https://github.com/UNITRONIX/BetterDesk/compare/v3.5.22...v3.5.23
 [3.5.24]: https://github.com/UNITRONIX/BetterDesk/compare/v3.5.23...v3.5.24
 [3.5.25]: https://github.com/UNITRONIX/BetterDesk/compare/v3.5.24...v3.5.25
+[3.5.26]: https://github.com/UNITRONIX/BetterDesk/compare/v3.5.25...v3.5.26
+[3.5.27]: https://github.com/UNITRONIX/BetterDesk/compare/v3.5.26...v3.5.27
+[3.5.28]: https://github.com/UNITRONIX/BetterDesk/compare/v3.5.27...v3.5.28
+[3.5.29]: https://github.com/UNITRONIX/BetterDesk/compare/v3.5.28...v3.5.29

@@ -13,8 +13,10 @@
 #   -b FILE   Branding profile copied to resources/branding.json before build
 #             (default: keep the checked-in unbranded profile)
 #   -o FILE   Output binary path (default: dist/betterdesk-support[-os])
-#   -p OS     Target OS (default: host OS). Cross-compiling Fyne needs the
-#             matching CGO toolchain (mingw-w64 for windows, osxcross for darwin).
+#   -p OS     Target OS (default: host OS). Default UI is Wails (WebView2 /
+#             WebKit). Set BETTERDESK_SUPPORT_FYNEUI=1 for legacy Fyne builds
+#             (needs OpenGL/Mesa on Windows). Cross-compiling still needs the
+#             matching CGO toolchain (mingw-w64 for windows).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -52,12 +54,14 @@ if [ ! -f "$SIGNING_KEY_FILE" ]; then
 fi
 
 seal_branding() {
+    # Pure-Go helper — must not inherit mingw CC/CXX or host CGO from the
+    # Windows cross-compile env (that compiles runtime/cgo with the wrong CC).
     local args
     args=(-in resources/branding.json -out resources/branding.json)
     if [ -n "$SIGNING_KEY_FILE" ]; then
         args+=(-signing-key-file "$SIGNING_KEY_FILE" -public-key-out resources/branding.pub)
     fi
-    "$GO" run ./cmd/sealbranding "${args[@]}"
+    CGO_ENABLED=0 CC= CXX= "$GO" run ./cmd/sealbranding "${args[@]}"
 }
 
 # Bake branding (Console generator overwrites this before invoking build).
@@ -83,15 +87,23 @@ if [ -z "$OUTPUT" ]; then
     OUTPUT="dist/betterdesk-support-${TARGET_OS}${EXT}"
 fi
 
-if [ "$TARGET_OS" = "windows" ]; then
-    export CC="${CC:-x86_64-w64-mingw32-gcc}"
-    export CXX="${CXX:-x86_64-w64-mingw32-g++}"
+# Do NOT export mingw CC/CXX here — seal_branding (and any host go run) must
+# use the native toolchain. Windows CC is applied only around the final build.
+
+# Default UI: Wails (embedded frontend/dist). Legacy Fyne remains behind the
+# fyneui build tag for emergency rebuilds.
+BUILD_TAGS="release"
+if [ "${BETTERDESK_SUPPORT_FYNEUI:-0}" = "1" ]; then
+    BUILD_TAGS="release,fyneui"
+    if [ "$TARGET_OS" = "windows" ] && [ -f "windows/opengl32.dll" ] && [ -f "windows/libgallium_wgl.dll" ]; then
+        BUILD_TAGS="release,fyneui,mesaembed"
+        echo "Legacy Fyne UI: embedding Mesa OpenGL DLLs"
+    fi
 fi
 
-BUILD_TAGS="release"
-if [ "$TARGET_OS" = "windows" ] && [ -f "windows/opengl32.dll" ]; then
-    BUILD_TAGS="release,mesaembed"
-    echo "Embedding Mesa opengl32.dll for software OpenGL on Windows"
+if [ ! -f "frontend/ui/index.html" ]; then
+    echo "ERROR: frontend/ui/index.html missing (Wails UI assets)" >&2
+    exit 1
 fi
 
 WIN_LDFLAGS="-s -w -H=windowsgui"
@@ -144,12 +156,15 @@ linux_dual_build() {
 }
 
 if [ "$TARGET_OS" = "linux" ] && [ "$DUAL_LINUX" = 1 ]; then
-    if [ -z "$OUTPUT" ]; then
-        mkdir -p dist
-        OUTPUT="dist/betterdesk-support"
+    if [ "${BETTERDESK_SUPPORT_FYNEUI:-0}" = "1" ]; then
+        if [ -z "$OUTPUT" ]; then
+            mkdir -p dist
+            OUTPUT="dist/betterdesk-support"
+        fi
+        linux_dual_build
+        exit 0
     fi
-    linux_dual_build
-    exit 0
+    echo "Note: Wails UI uses a single Linux binary (ignoring -d X11/Wayland split)"
 fi
 
 # Seal branding for release embeds (plaintext restored after build).
@@ -195,6 +210,10 @@ if [ "${BETTERDESK_USE_GARBLE:-0}" = "1" ] && command -v garble >/dev/null 2>&1;
     BUILD_CMD=(garble -literals -tiny build -trimpath -tags "$BUILD_TAGS" -ldflags "$LDFLAGS" -o "$OUTPUT" .)
 fi
 
+if [ "$TARGET_OS" = "windows" ]; then
+    export CC="${CC:-x86_64-w64-mingw32-gcc}"
+    export CXX="${CXX:-x86_64-w64-mingw32-g++}"
+fi
 GOOS="$TARGET_OS" CGO_ENABLED=1 "${BUILD_CMD[@]}"
 
 # Optional UPX pack (Windows portable) — opt-in; can trigger AV false positives.
