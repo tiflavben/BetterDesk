@@ -484,8 +484,8 @@ func (s *Server) startRelay(conn1, conn2 net.Conn, uuid string) {
 
 	// Count real wire bytes in each direction (innermost wrapper, so the
 	// tally reflects actual bytes relayed regardless of bandwidth limiting).
-	cc1 := &countingConn{Conn: ic1}
-	cc2 := &countingConn{Conn: ic2}
+	cc1 := &countingConn{Conn: ic1, shared: &s.TotalBytes}
+	cc2 := &countingConn{Conn: ic2, shared: &s.TotalBytes}
 
 	// Set up readers/writers with optional bandwidth limiting
 	var r1 io.Reader = cc1
@@ -524,7 +524,9 @@ func (s *Server) startRelay(conn1, conn2 net.Conn, uuid string) {
 	if s.trafficSink != nil {
 		s.trafficSink.RecordTraffic(uuid, cc1.Bytes()+cc2.Bytes())
 	}
-	s.TotalBytes.Add(cc1.Bytes() + cc2.Bytes())
+	// Note: TotalBytes is accumulated streamingly by countingConn (shared
+	// pointer), so the heartbeat sees live per-window bandwidth during the
+	// session rather than a post-session pulse.
 
 	if s.onRelayEnd != nil {
 		s.onRelayEnd(uuid)
@@ -575,13 +577,17 @@ func (c *idleTimeoutConn) Write(b []byte) (int, error) {
 // while a copy goroutine is still unwinding).
 type countingConn struct {
 	net.Conn
-	bytes atomic.Int64
+	bytes  atomic.Int64
+	shared *atomic.Int64 // optional live counter (Server.TotalBytes) for streaming telemetry
 }
 
 func (c *countingConn) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
 	if n > 0 {
 		c.bytes.Add(int64(n))
+		if c.shared != nil {
+			c.shared.Add(int64(n))
+		}
 	}
 	return n, err
 }
@@ -590,6 +596,9 @@ func (c *countingConn) Write(b []byte) (int, error) {
 	n, err := c.Conn.Write(b)
 	if n > 0 {
 		c.bytes.Add(int64(n))
+		if c.shared != nil {
+			c.shared.Add(int64(n))
+		}
 	}
 	return n, err
 }
