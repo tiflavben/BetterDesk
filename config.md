@@ -1,7 +1,7 @@
 # BetterDesk 项目状态文档（config.md）
 
 > 本文档供后续开发续接使用。**禁止写入任何凭据**（API key、数据库密码、PAT、SSH 私钥、管理员密码、会话 cookie）——一律以 `[REDACTED]` 表示。
-> 最后更新：2026-08-10（全面扫描 + 修复 + 加固后）
+> 最后更新：2026-08-10 晚（第二轮全面扫描 + 修复 + 部署回归后）
 
 ---
 
@@ -61,8 +61,11 @@
 
 - 工作区：`F:\betterdesk`，分支 `dev`（推送 `fork` = tiflavben/BetterDesk）
 - Remote：`origin` = UNITRONIX/BetterDesk（**上游**，主分支 `dev`）；`fork` = tiflavben/BetterDesk
-- 最近提交链（dev，HEAD = `cfac560`，2026-08-10 三批提交已推送 fork/dev，远端 SHA 匹配）：
-  - `cfac560` fix(server): TOTP log leak, panic recovery, perms, db dual-backend（11 文件：TOTP 验证码仅记长度/panic recover×3/peers online-policy 权限 + org scope/LIKE 转义/org 角色/TouchAPIKey 同步/PG UpsertPeer 补 3 列/迁移对齐/时间戳格式）
+- 最近提交链（dev，HEAD = `de05c69`，2026-08-10 第二轮三批提交已推送 fork/dev，远端 SHA 匹配）：
+  - `de05c69` fix(server): heartbeat source IP check + db index + deploy paths（11 文件：心跳源 IP 校验防打洞流量劫持 + 新增 `TestHeartbeatRejectsSourceIPChange`、`peers."user"` 索引 `idx_peers_user` 双端、mesh 录制目录配置化 `MESH_RECORDINGS_DIR`/`RecordingDir` + 列表读取对齐、deploy 模板加 `WorkingDirectory=/opt/betterdesk`）
+  - `1f88afb` fix(ui): toolkit gating + ws origin + misc（7 文件：toolkit 链接/功能块按 server.config 门控、tickets 创建角色 `isFullTicketAccessRole`、cdap-studio PUT 所有权 `isSuperAdminRole`、CDAP 契约 503 透传、`deviceStatusPush` + `serverTerminalProxy` 补 `enforceOrigin`）
+  - `523462a` fix(security): close authz gaps + restore device self-service（10 文件：设备自管理恢复 viewer/operator 可管自己设备 scope 兜底、`/api/bd/attestation` + device-policy 加 `identifyDevice`、inventory/activity 拆 device/admin 路由修复 `/api/bd/device-policy` 被通配拦截、server_admin 补 `cdap.view`/`chat.access`、审计读端点加 `audit.view`、security-audit API 对齐 requireAdmin、database/stats 升 `server.config`）
+  - 第一轮（更早）：`cfac560` fix(server): TOTP log leak, panic recovery, perms, db dual-backend（11 文件：TOTP 验证码仅记长度/panic recover×3/peers online-policy 权限 + org scope/LIKE 转义/org 角色/TouchAPIKey 同步/PG UpsertPeer 补 3 列/迁移对齐/时间戳格式）
   - `50dafea` fix(ui): device scope count, fleet CSRF, contract UX（29 文件：effective-scope 双解包/fleet CSRF 头/inventory NaN/负偏移/防重复提交/时区统一/i18n 24 语言补全）
   - `762f9b9` fix(security): authz hardening + XSS/upload fixes（16 文件：API key 泄露封堵/审计写入认证/设备 delete-ban 权限/系统日志-Docker server.config/票证 IDOR/CDAP 授权/策略越权/toolkit requireAdmin/布局 JSON.stringify XSS/chat 附件/SVG 上传过滤）
   - 更早：`f4d4e5c` Merge origin/dev（**上游 12 个新提交已合并**：agent Wails UI、fleet org 过滤修复、attestation 对比度、版本 bump 至 3.5.29）、`10cc31d` fix(billing): user-scoped contracts resolved & enforced、`423da9b` style(dashboard)、`ff6192e` feat(dashboard)、`0550f7f` feat(ui): 管理员/普通用户 UI 隔离、`2e2fe18` 用户资源管理、`add0c6a`/`d941ca3`/`93beda3`/`c244eff`/`1c4b80c` Relay telemetry 链
@@ -118,9 +121,13 @@
 - UI 隔离：viewer 登录实测（rail 仅仪表板/设置、banned 卡/服务器状态/审计/品牌隐藏、`/inventory` 403）✓
 - 上游合并后：`go test ./...` 全绿、Go/Node 构建通过、已部署三机、面板 API 冒烟 200 ✓
 - **2026-08-10 全面扫描 + 修复 + 加固后**：`go test` 5 包全绿；安全回归 8/8 通过（HTTPS 5443 实测）；合同字段保存回归通过；relay 双节点心跳正常（CPU/RAM 有值）；加固前后对比：防火墙（nftables drop）/SSH（纯密钥）/备份（每日 02:00）/PG 密码（24 位）/服务降权（betterdesk 用户）/HTTPS（5443）✓
+- **2026-08-10 第二轮（28 文件修复部署三机实测）**：device-policy 匿名 401 / 带头 200；attestation 匿名 401；security-audit 匿名 401；Go API 200；双 relay online；心跳 5s 更新；`go test` 全绿（signal 新增 `TestHeartbeatRejectsSourceIPChange` PASS）✓
 
 ## 9. 进行中 / 待办
 
+- [x] **第二轮全面扫描（6 路并行：增量审查 / Go 残余补验 / Web 二次安全 / DB 残余 / 加固后环境验证 / 协议层）**：已全部修复并部署回归（合入 523462a / 1f88afb / de05c69）
+- [x] **设备页普通用户 0 台遗留（第二轮）**：确认已修复 + 实测（viewer 可管自己设备，设备自管理 scope 兜底恢复）
+- [x] **/api/bd/device-policy 不可达**：inventory + activity 通配路由拆 device/admin 双 router，实测恢复可达 + 补 `identifyDevice` 认证（匿名 401）
 - [x] **设备页普通用户显示 0 台**：已修复 + 回归（viewer 可见自己设备 1300228927，操作他人设备 486608902 返回 403）
 - [x] **全面 bug 扫描**：5 路并行（安全 12 / 功能 10 / Go 9 / DB 7 / 运维 11），已全部修复（合入 762f9b9 / 50dafea / cfac560）
 - [x] **浏览器级 UI 双视角联调**：HTTPS 5443 实测——安全回归 8/8 通过，viewer 越权访问全 403/401/404；管理员走查通过
@@ -132,9 +139,10 @@
 - [ ] 测试用户 517532265 及其合同清理与否待用户确认（真实业务使用中）
 - [ ] LAN 直连流量不经过 relay（RustDesk 架构），不计入合同流量——如需计费需另行设计（架构边界）
 - [ ] **新增**：面板自签名证书 2027-08-10 到期，需轮换
-- [ ] **新增**：21121 TLS 化后 RustDesk 旧客户端明文兼容性实测（`RUSTDESK_API_DISABLE_TOTP` 类开关或回退）
+- [ ] **新增**：21121 TLS 化后 RustDesk 旧客户端明文兼容性实测（如需要 `RUSTDESK_API_TLS=false`）
 - [ ] **新增**：`uitest_no_pkg` 合同（2/300MB/2026-12-31）为测试产物，可清理
 - [ ] **新增**：`ENROLLMENT_MODE=open` 待用户决策是否改 `managed`
+- [ ] **新增**：`ux35-sidebar.ejs` 的 Toolkit 门控仍挂 `device.connect`（与 classic sidebar 不一致），下轮对齐
 
 ## 10. 部署速查
 
@@ -176,3 +184,6 @@ curl -s -H "X-API-Key: *** root@192.168.1.101 'cat /etc/betterdesk/.api_key')" h
 11. **Hermes 终端脱敏陷阱**：服务器命令带 `postgres://` URL 时，Hermes 终端会把密码脱敏成 `***`——判断"密码占位符/连不上库"问题前先做字节级验证（用 Python 直读，或 `wc -c` 长度 + star_count 比对），别把脱敏当真实内容
 12. **三台 unit 有 `ProtectSystem=strict`**：部署文件到 `/opt/betterdesk`、`/opt/betterdesk-console/data`、`/etc/betterdesk` 之外路径会写入失败（ReadOnlyPaths）
 13. **PG 密码在三台 unit DSN（24 位字母数字）**：改密码需三台 unit 同步 + 重启（顺序：先 PG 后服务）；重启后 `journalctl` 确认无 auth failed
+14. ⚠️ **web-nodejs 路由通配陷阱**：挂在 `/api/bd` 下的模块若有管理端 `GET /` 或 `GET /:id` 通配路由，会拦截 `/api/bd/device-policy` 等设备端点（剥离前缀后匹配）——inventory/activity 已拆 device/admin 双 router（`module.exports={device,admin}`，index.js 分挂载）；新增 `/api/bd` 模块前先检查有无通配路由
+15. ⚠️ **拆分后端点认证暴露**：通配路由移除后，设备端点可能从"被 requireAuth 侥幸挡住"变"真匿名"——device-policy 曾因此匿名 200，已补 `identifyDevice`；拆分后必须重测匿名可达性（匿名应 401）
+16. **lazyRoute 包 `module.exports` 为 `{device,admin}` 时**：index.js 需改急加载（lazyRoute 取不到 `.device`）
