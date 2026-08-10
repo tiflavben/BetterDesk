@@ -21,6 +21,19 @@ const Utils = {
         
         return date.toLocaleDateString(window.BetterDesk.lang, { ...defaultOptions, ...options });
     },
+
+    /**
+     * Browser local timezone offset, RFC3339 with colon format (e.g. +08:00 / -05:30).
+     * Backend Go time.Time parsing requires the colon in the timezone offset.
+     */
+    getLocalTzOffset() {
+        const offsetMin = new Date().getTimezoneOffset(); // UTC relative to local (minutes, west positive)
+        const sign = offsetMin <= 0 ? '+' : '-';
+        const abs = Math.abs(offsetMin);
+        const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+        const mm = String(abs % 60).padStart(2, '0');
+        return `${sign}${hh}:${mm}`;
+    },
     
     /**
      * Format relative time (e.g., "5 minutes ago")

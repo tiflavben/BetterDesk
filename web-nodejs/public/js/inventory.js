@@ -231,7 +231,7 @@
     }
 
     function formatMemory(total, used) {
-        if (!total) return '—';
+        if (!total || used == null) return '—';
         const pct = Math.round((used / total) * 100);
         return `${formatBytes(used * 1024 * 1024)} / ${formatBytes(total * 1024 * 1024)} (${pct}%)`;
     }

@@ -143,7 +143,7 @@
             const lastErrorEl = document.getElementById('clock-last-error');
             const synced = !!st.synced;
             if (statusEl) statusEl.textContent = synced ? 'OK' : 'WARN';
-            const offset = `${st.offset_ms || 0} ms`;
+            const offset = `${st.offset_ms ?? 0} ms`;
             if (offsetEl) offsetEl.textContent = offset;
             if (ntpServerEl) ntpServerEl.textContent = st.ntp_server || '—';
             if (osSyncEl) {
@@ -591,8 +591,8 @@
             if (remainingRaw !== '') patch.remaining_minutes = parseInt(remainingRaw, 10);
             if (!Number.isNaN(hourlyRate)) patch.hourly_rate = hourlyRate;
             if (overageRaw !== '') patch.overage_rate = parseFloat(overageRaw);
-            patch.valid_from = validFrom ? `${validFrom}T00:00:00Z` : null;
-            patch.valid_until = validUntil ? `${validUntil}T23:59:59Z` : null;
+            patch.valid_from = validFrom ? `${validFrom}T00:00:00${Utils.getLocalTzOffset()}` : null;
+            patch.valid_until = validUntil ? `${validUntil}T23:59:59${Utils.getLocalTzOffset()}` : null;
             patch.quota_bytes = quotaBytes;
             try {
                 await api(`/api/panel/billing/contracts/${encodeURIComponent(editingContractId)}`, {
@@ -626,8 +626,8 @@
             if (remainingRaw !== '') body.remaining_minutes = parseInt(remainingRaw, 10);
             if (!Number.isNaN(hourlyRate)) body.hourly_rate = hourlyRate;
             if (overageRaw !== '') body.overage_rate = parseFloat(overageRaw);
-            if (validFrom) body.valid_from = `${validFrom}T00:00:00Z`;
-            if (validUntil) body.valid_until = `${validUntil}T23:59:59Z`;
+            if (validFrom) body.valid_from = `${validFrom}T00:00:00${Utils.getLocalTzOffset()}`;
+            if (validUntil) body.valid_until = `${validUntil}T23:59:59${Utils.getLocalTzOffset()}`;
             body.quota_bytes = quotaBytes;
 
             await api('/api/panel/billing/contracts', { method: 'POST', body });

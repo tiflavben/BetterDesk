@@ -190,7 +190,11 @@
         "intune_script_title": "Windows 部署片段",
         "intune_script_hint": "RustDesk MSI 完成後以系統管理員身分執行。使用與「複製部署字串」相同的 config 字串。",
         "deploy_string_not_ready": "在載入伺服器公開金鑰之前，部署字串不可用。",
-        "client_server_host_env_hint": "公共 ID、中繼與 API 已於 設定 → 公共用戶端端點 設定。清除後可再次使用此覆寫欄位。"
+        "client_server_host_env_hint": "公共 ID、中繼與 API 已於 設定 → 公共用戶端端點 設定。清除後可再次使用此覆寫欄位。",
+        "my_contract": "My Subscription",
+        "expiry": "Expiry",
+        "traffic_used": "Traffic Used",
+        "device_limit": "Device Limit"
     },
     "devices": {
         "title": "設備",
@@ -1124,7 +1128,18 @@
         "pro_strategy_label": "RustDesk Pro strategy",
         "pro_strategy_hint": "Optional access-control strategy for RustDesk Pro client features (separate from panel role).",
         "pro_strategy_none": "None",
-        "column_scope": "Scope"
+        "column_scope": "Scope",
+        "devices": "Devices",
+        "device_limit": "Device Limit",
+        "traffic": "Traffic (Used/Quota)",
+        "expiry": "Expiry",
+        "unlimited": "Unlimited",
+        "contract_manage": "Contract Management",
+        "contract_manage_hint": "Device limit (0=unlimited), traffic quota in MB (0=unlimited), expiry date",
+        "device_limit_label": "Device Limit",
+        "traffic_quota_mb_label": "Traffic Quota (MB)",
+        "expiry_label": "Expiry Date",
+        "save_contract": "Save Contract Settings"
     },
     "folders": {
         "title": "文件夾",

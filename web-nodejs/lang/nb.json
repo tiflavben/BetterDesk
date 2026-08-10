@@ -192,7 +192,11 @@
         "intune_script_title": "Windows-implementeringsutdrag",
         "intune_script_hint": "Kjør som administrator etter at RustDesk MSI er ferdig. Bruker samme config-streng som Kopiér deploy-streng.",
         "deploy_string_not_ready": "Deploy-streng er ikke tilgjengelig før serverens offentlige nøkkel er lastet.",
-        "client_server_host_env_hint": "Offentlige ID-, relay- og API-endepunkter er satt under Innstillinger → Offentlige klient-endepunkter. Tøm der for å bruke denne overstyringen igjen."
+        "client_server_host_env_hint": "Offentlige ID-, relay- og API-endepunkter er satt under Innstillinger → Offentlige klient-endepunkter. Tøm der for å bruke denne overstyringen igjen.",
+        "my_contract": "My Subscription",
+        "expiry": "Expiry",
+        "traffic_used": "Traffic Used",
+        "device_limit": "Device Limit"
     },
     "devices": {
         "title": "Enheter",
@@ -1113,7 +1117,18 @@
         "pro_strategy_label": "RustDesk Pro strategy",
         "pro_strategy_hint": "Optional access-control strategy for RustDesk Pro client features (separate from panel role).",
         "pro_strategy_none": "None",
-        "column_scope": "Scope"
+        "column_scope": "Scope",
+        "devices": "Devices",
+        "device_limit": "Device Limit",
+        "traffic": "Traffic (Used/Quota)",
+        "expiry": "Expiry",
+        "unlimited": "Unlimited",
+        "contract_manage": "Contract Management",
+        "contract_manage_hint": "Device limit (0=unlimited), traffic quota in MB (0=unlimited), expiry date",
+        "device_limit_label": "Device Limit",
+        "traffic_quota_mb_label": "Traffic Quota (MB)",
+        "expiry_label": "Expiry Date",
+        "save_contract": "Save Contract Settings"
     },
     "folders": {
         "title": "Folders",

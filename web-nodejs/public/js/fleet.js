@@ -2,6 +2,17 @@
 'use strict';
 (function () {
     const _ = window._ || (k => k);
+
+    // 统一带 CSRF 头的请求（面板全局 doubleCsrfProtection 要求写操作携带 X-CSRF-Token）
+    async function apiFetch(url, options = {}) {
+        const method = (options.method || 'GET').toUpperCase();
+        const headers = Object.assign({}, options.headers);
+        if (method !== 'GET' && method !== 'HEAD' && window.BetterDesk && window.BetterDesk.csrfToken) {
+            headers['X-CSRF-Token'] = window.BetterDesk.csrfToken;
+        }
+        return fetch(url, Object.assign({}, options, { headers }));
+    }
+
     let _orgs = [];
     let _resources = [];
     let _tasks = [];
@@ -145,7 +156,7 @@
             const url = editId
                 ? `/api/panel/fleet/resources/${encodeURIComponent(orgId)}/${encodeURIComponent(editId)}`
                 : `/api/panel/fleet/resources/${encodeURIComponent(orgId)}`;
-            await fetch(url, {
+            await apiFetch(url, {
                 method: editId ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
@@ -165,7 +176,7 @@
         const orgId = document.getElementById('res-org-select')?.value;
         if (!orgId) return;
         try {
-            await fetch(`/api/panel/fleet/resources/${encodeURIComponent(orgId)}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            await apiFetch(`/api/panel/fleet/resources/${encodeURIComponent(orgId)}/${encodeURIComponent(id)}`, { method: 'DELETE' });
             loadResources();
         } catch (e) { console.error('deleteResource', e); }
     }
@@ -268,7 +279,7 @@
             const url = editId
                 ? `/api/panel/fleet/tasks/${encodeURIComponent(editId)}`
                 : '/api/panel/fleet/tasks';
-            await fetch(url, {
+            await apiFetch(url, {
                 method: editId ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
@@ -281,14 +292,14 @@
     async function deleteTask(id) {
         if (!confirm(_('fleet.confirm_delete'))) return;
         try {
-            await fetch(`/api/panel/fleet/tasks/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            await apiFetch(`/api/panel/fleet/tasks/${encodeURIComponent(id)}`, { method: 'DELETE' });
             loadTasks();
         } catch (e) { console.error('deleteTask', e); }
     }
 
     async function retryTask(id) {
         try {
-            await fetch(`/api/panel/fleet/tasks/${encodeURIComponent(id)}/retry`, { method: 'POST' });
+            await apiFetch(`/api/panel/fleet/tasks/${encodeURIComponent(id)}/retry`, { method: 'POST' });
             loadTasks();
         } catch (e) { console.error('retryTask', e); }
     }
@@ -371,7 +382,7 @@
 
     async function scanDevice(deviceId) {
         try {
-            await fetch(`/api/panel/fleet/compliance/${encodeURIComponent(deviceId)}/scan`, { method: 'POST' });
+            await apiFetch(`/api/panel/fleet/compliance/${encodeURIComponent(deviceId)}/scan`, { method: 'POST' });
             loadCompliance();
         } catch (e) { console.error('scanDevice', e); }
     }
@@ -379,7 +390,7 @@
     async function scanAll() {
         // Scan all devices in the compliance list
         for (const d of _complianceData) {
-            try { await fetch(`/api/panel/fleet/compliance/${encodeURIComponent(d.device_id || d.id)}/scan`, { method: 'POST' }); }
+            try { await apiFetch(`/api/panel/fleet/compliance/${encodeURIComponent(d.device_id || d.id)}/scan`, { method: 'POST' }); }
             catch { /* continue */ }
         }
         loadCompliance();
@@ -388,7 +399,7 @@
     async function remediate(deviceId) {
         if (!confirm(_('fleet.confirm_remediate'))) return;
         try {
-            await fetch(`/api/panel/fleet/compliance/${encodeURIComponent(deviceId)}/remediate`, {
+            await apiFetch(`/api/panel/fleet/compliance/${encodeURIComponent(deviceId)}/remediate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'auto' })

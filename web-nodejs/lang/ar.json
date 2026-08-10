@@ -193,7 +193,11 @@
         "intune_script_title": "مقتطف نشر Windows",
         "intune_script_hint": "شغّله بامتيازات المسؤول بعد اكتمال MSI الخاص بـ RustDesk. يستخدم نفس سلسلة الإعداد مثل نسخ سلسلة النشر.",
         "deploy_string_not_ready": "سلسلة النشر غير متاحة حتى يتم تحميل المفتاح العام للخادم.",
-        "client_server_host_env_hint": "نقاط نهاية ID والترحيل وAPI العامة مُعدّة في الإعدادات → نقاط نهاية العملاء العامة. امسحها هناك لاستخدام هذا التجاوز مجدداً."
+        "client_server_host_env_hint": "نقاط نهاية ID والترحيل وAPI العامة مُعدّة في الإعدادات → نقاط نهاية العملاء العامة. امسحها هناك لاستخدام هذا التجاوز مجدداً.",
+        "my_contract": "My Subscription",
+        "expiry": "Expiry",
+        "traffic_used": "Traffic Used",
+        "device_limit": "Device Limit"
     },
     "devices": {
         "title": "الأجهزة",
@@ -1114,7 +1118,18 @@
         "pro_strategy_label": "RustDesk Pro strategy",
         "pro_strategy_hint": "Optional access-control strategy for RustDesk Pro client features (separate from panel role).",
         "pro_strategy_none": "None",
-        "column_scope": "Scope"
+        "column_scope": "Scope",
+        "devices": "Devices",
+        "device_limit": "Device Limit",
+        "traffic": "Traffic (Used/Quota)",
+        "expiry": "Expiry",
+        "unlimited": "Unlimited",
+        "contract_manage": "Contract Management",
+        "contract_manage_hint": "Device limit (0=unlimited), traffic quota in MB (0=unlimited), expiry date",
+        "device_limit_label": "Device Limit",
+        "traffic_quota_mb_label": "Traffic Quota (MB)",
+        "expiry_label": "Expiry Date",
+        "save_contract": "Save Contract Settings"
     },
     "folders": {
         "title": "Folders",

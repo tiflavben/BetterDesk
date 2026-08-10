@@ -186,7 +186,11 @@
         "intune_script_title": "Snippet di deployment Windows",
         "intune_script_hint": "Esegui come amministratore dopo il MSI di RustDesk. Usa la stessa stringa di Copia stringa di deploy.",
         "deploy_string_not_ready": "La stringa di deploy non è disponibile finché la chiave pubblica del server non è caricata.",
-        "client_server_host_env_hint": "ID, relay e API pubblici sono in Impostazioni → Endpoint client pubblici. Svuota lì per usare di nuovo questo campo."
+        "client_server_host_env_hint": "ID, relay e API pubblici sono in Impostazioni → Endpoint client pubblici. Svuota lì per usare di nuovo questo campo.",
+        "my_contract": "My Subscription",
+        "expiry": "Expiry",
+        "traffic_used": "Traffic Used",
+        "device_limit": "Device Limit"
     },
     "devices": {
         "title": "Dispositivi",
@@ -1107,7 +1111,18 @@
         "pro_strategy_label": "RustDesk Pro strategy",
         "pro_strategy_hint": "Optional access-control strategy for RustDesk Pro client features (separate from panel role).",
         "pro_strategy_none": "None",
-        "column_scope": "Scope"
+        "column_scope": "Scope",
+        "devices": "Devices",
+        "device_limit": "Device Limit",
+        "traffic": "Traffic (Used/Quota)",
+        "expiry": "Expiry",
+        "unlimited": "Unlimited",
+        "contract_manage": "Contract Management",
+        "contract_manage_hint": "Device limit (0=unlimited), traffic quota in MB (0=unlimited), expiry date",
+        "device_limit_label": "Device Limit",
+        "traffic_quota_mb_label": "Traffic Quota (MB)",
+        "expiry_label": "Expiry Date",
+        "save_contract": "Save Contract Settings"
     },
     "folders": {
         "title": "Cartelle",

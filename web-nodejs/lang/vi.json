@@ -192,7 +192,11 @@
         "intune_script_title": "Đoạn triển khai Windows",
         "intune_script_hint": "Chạy với quyền quản trị sau khi MSI RustDesk hoàn tất. Dùng cùng chuỗi config như Sao chép chuỗi triển khai.",
         "deploy_string_not_ready": "Chuỗi triển khai chưa sẵn sàng cho đến khi tải khóa công khai của máy chủ.",
-        "client_server_host_env_hint": "ID, relay và API công khai được cấu hình tại Cài đặt → Điểm cuối client công khai. Xóa ở đó để dùng lại trường này."
+        "client_server_host_env_hint": "ID, relay và API công khai được cấu hình tại Cài đặt → Điểm cuối client công khai. Xóa ở đó để dùng lại trường này.",
+        "my_contract": "My Subscription",
+        "expiry": "Expiry",
+        "traffic_used": "Traffic Used",
+        "device_limit": "Device Limit"
     },
     "devices": {
         "title": "Thiết bị",
@@ -1113,7 +1117,18 @@
         "pro_strategy_label": "RustDesk Pro strategy",
         "pro_strategy_hint": "Optional access-control strategy for RustDesk Pro client features (separate from panel role).",
         "pro_strategy_none": "None",
-        "column_scope": "Scope"
+        "column_scope": "Scope",
+        "devices": "Devices",
+        "device_limit": "Device Limit",
+        "traffic": "Traffic (Used/Quota)",
+        "expiry": "Expiry",
+        "unlimited": "Unlimited",
+        "contract_manage": "Contract Management",
+        "contract_manage_hint": "Device limit (0=unlimited), traffic quota in MB (0=unlimited), expiry date",
+        "device_limit_label": "Device Limit",
+        "traffic_quota_mb_label": "Traffic Quota (MB)",
+        "expiry_label": "Expiry Date",
+        "save_contract": "Save Contract Settings"
     },
     "folders": {
         "title": "Folders",

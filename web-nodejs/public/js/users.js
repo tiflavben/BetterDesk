@@ -17,6 +17,7 @@
     let strategies = [];
     let strategiesLoaded = false;
     let editingUserId = null;
+    let submitBusy = false;
     // Cache: userId -> [{ id, org_id, name, org_name, role }]
     const userOrgsCache = new Map();
     
@@ -215,7 +216,8 @@
             if (!userId) return;
             try {
                 const resp = await Utils.api(`/api/users/${userId}/effective-scope`);
-                const count = resp.data?.count ?? 0;
+                // Utils.api 已解包 data，resp 即 {count, restricted}；兼容两种形状
+                const count = resp.count ?? resp.data?.count ?? 0;
                 cell.textContent = _('users.effective_scope_count', { count }) || `${count} devices`;
             } catch (_) {
                 cell.textContent = '—';
@@ -722,53 +724,61 @@
      * Submit user form
      */
     async function submitUserForm() {
+        if (submitBusy) return;
         const form = document.getElementById('user-form');
         if (!form) return;
         
-        const username = document.getElementById('user-username')?.value.trim();
-        const password = document.getElementById('user-password')?.value;
-        const role = document.getElementById('user-role')?.value;
-        const email = document.getElementById('user-email')?.value.trim();
-        const groupGuids = selectedUserGroupGuids();
-        const folderIds = selectedFolderIds();
-        const strategyGuid = document.getElementById('user-strategy')?.value || '';
-        const peerIdsRaw = document.getElementById('user-direct-devices')?.value || '';
-        const peerIds = peerIdsRaw.split(/[,;\s]+/).map(v => v.trim()).filter(Boolean);
-        // Contract management fields (user-scoped billing contract)
-        const deviceLimitRaw = document.getElementById('contract-device-limit')?.value;
-        const quotaMbRaw = document.getElementById('contract-quota-mb')?.value;
-        const expiryRaw = document.getElementById('contract-expiry')?.value;
-        const contractPatch = {};
-        if (deviceLimitRaw !== undefined && deviceLimitRaw !== '') {
-            contractPatch.device_limit = Math.max(0, Number(deviceLimitRaw) || 0);
+        const saveBtn = document.querySelector('.modal-overlay.open [data-btn-index="1"]');
+        const originalLabel = saveBtn ? saveBtn.textContent : '';
+        submitBusy = true;
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.textContent = _('common.loading');
         }
-        if (quotaMbRaw !== undefined && quotaMbRaw !== '') {
-            contractPatch.quota_bytes = Math.max(0, Number(quotaMbRaw) || 0) * 1048576;
-        }
-        if (expiryRaw !== undefined && expiryRaw !== '') {
-            contractPatch.valid_until = expiryRaw + 'T23:59:59+08:00';
-        }
-        
-        // Validate
-        if (!editingUserId) {
-            // Creating new user
-            if (!username || !password) {
-                Notifications.error(_('users.fill_required'));
-                return;
-            }
-            
-            if (!/^[a-zA-Z0-9_]{3,32}$/.test(username)) {
-                Notifications.error(_('users.invalid_username'));
-                return;
-            }
-            
-            if (password.length < 8) {
-                Notifications.error(_('users.password_too_short'));
-                return;
-            }
-        }
-        
         try {
+            const username = document.getElementById('user-username')?.value.trim();
+            const password = document.getElementById('user-password')?.value;
+            const role = document.getElementById('user-role')?.value;
+            const email = document.getElementById('user-email')?.value.trim();
+            const groupGuids = selectedUserGroupGuids();
+            const folderIds = selectedFolderIds();
+            const strategyGuid = document.getElementById('user-strategy')?.value || '';
+            const peerIdsRaw = document.getElementById('user-direct-devices')?.value || '';
+            const peerIds = peerIdsRaw.split(/[,;\s]+/).map(v => v.trim()).filter(Boolean);
+            // Contract management fields (user-scoped billing contract)
+            const deviceLimitRaw = document.getElementById('contract-device-limit')?.value;
+            const quotaMbRaw = document.getElementById('contract-quota-mb')?.value;
+            const expiryRaw = document.getElementById('contract-expiry')?.value;
+            const contractPatch = {};
+            if (deviceLimitRaw !== undefined && deviceLimitRaw !== '') {
+                contractPatch.device_limit = Math.max(0, Number(deviceLimitRaw) || 0);
+            }
+            if (quotaMbRaw !== undefined && quotaMbRaw !== '') {
+                contractPatch.quota_bytes = Math.max(0, Number(quotaMbRaw) || 0) * 1048576;
+            }
+            if (expiryRaw !== undefined && expiryRaw !== '') {
+                contractPatch.valid_until = expiryRaw + 'T23:59:59' + Utils.getLocalTzOffset();
+            }
+
+            // Validate
+            if (!editingUserId) {
+                // Creating new user
+                if (!username || !password) {
+                    Notifications.error(_('users.fill_required'));
+                    return;
+                }
+
+                if (!/^[a-zA-Z0-9_]{3,32}$/.test(username)) {
+                    Notifications.error(_('users.invalid_username'));
+                    return;
+                }
+
+                if (password.length < 8) {
+                    Notifications.error(_('users.password_too_short'));
+                    return;
+                }
+            }
+
             if (editingUserId) {
                 // Update existing user
                 const data = { role, email, groupGuids, folderIds, peerIds, strategyGuid };
@@ -818,6 +828,12 @@
             loadUsers();
         } catch (error) {
             Notifications.error(error.message || _('errors.server_error'));
+        } finally {
+            submitBusy = false;
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalLabel;
+            }
         }
     }
     

@@ -192,7 +192,11 @@
         "intune_script_title": "Windows तैनाती स्निपेट",
         "intune_script_hint": "RustDesk MSI पूरा होने के बाद व्यवस्थापक के रूप में चलाएँ। डिप्लॉय स्ट्रिंग कॉपी करें जैसा ही config स्ट्रिंग उपयोग करता है।",
         "deploy_string_not_ready": "सर्वर की सार्वजनिक कुंजी लोड होने तक डिप्लॉय स्ट्रिंग उपलब्ध नहीं है।",
-        "client_server_host_env_hint": "सार्वजनिक ID, relay और API Settings → Public client endpoints में सेट हैं। इस ओवरराइड के लिए वहाँ खाली करें।"
+        "client_server_host_env_hint": "सार्वजनिक ID, relay और API Settings → Public client endpoints में सेट हैं। इस ओवरराइड के लिए वहाँ खाली करें।",
+        "my_contract": "My Subscription",
+        "expiry": "Expiry",
+        "traffic_used": "Traffic Used",
+        "device_limit": "Device Limit"
     },
     "devices": {
         "title": "उपकरण",
@@ -1113,7 +1117,18 @@
         "pro_strategy_label": "RustDesk Pro strategy",
         "pro_strategy_hint": "Optional access-control strategy for RustDesk Pro client features (separate from panel role).",
         "pro_strategy_none": "None",
-        "column_scope": "Scope"
+        "column_scope": "Scope",
+        "devices": "Devices",
+        "device_limit": "Device Limit",
+        "traffic": "Traffic (Used/Quota)",
+        "expiry": "Expiry",
+        "unlimited": "Unlimited",
+        "contract_manage": "Contract Management",
+        "contract_manage_hint": "Device limit (0=unlimited), traffic quota in MB (0=unlimited), expiry date",
+        "device_limit_label": "Device Limit",
+        "traffic_quota_mb_label": "Traffic Quota (MB)",
+        "expiry_label": "Expiry Date",
+        "save_contract": "Save Contract Settings"
     },
     "folders": {
         "title": "Folders",
