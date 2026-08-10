@@ -111,8 +111,9 @@
 
 ## 9. 进行中 / 待办
 
-- [ ] **设备页普通用户显示 0 台（排查中）**：上游合并后 `/api/devices` 返回 `data.devices` 嵌套，`devices.js` 已兼容（`response.devices || response.data?.devices`）；浏览器缓存 `?v=` 旧 JS 疑似主因——重启面板换时间戳；子代理正在最终定位（含 scope owner 增强验证：1300228927 应显示、486608902 不应显示）
-- [ ] 全面 bug 扫描（前端路由/权限 + Go 服务端）——子代理进行中，结果待合入
+- [x] **设备页普通用户显示 0 台**：已修复（deviceGroupService owner 增强 + devices.js 响应结构兼容 + scope 验证），viewer 实测显示 1 台归属设备（ee5f70d）
+- [x] 全面 bug 扫描：已合入（ee5f70d——7 类越权 + XSS + Go 4 修复；remote 渲染 500 修复 d52585c）
+- [ ] **远程桌面已通但 relay 数据通路待配**：`/remote/:id` 查看器已修复（user 变量注入，d52585c）；查看器初始化并尝试连接，但面板 `/ws/relay` WS 代理配置为 `192.168.1.101:21117`（本机无 relay 服务 → ECONNREFUSED）——relay 在 102/103，需将 WS 代理指向真实 relay（RELAY_SERVERS）才能完成实际画面传输
 - [ ] 浏览器级 UI 登录联调（管理员与普通用户双视角完整走查，`http://192.168.1.101:5000`）
 - [ ] 上游合并后需复验：Relay 心跳/流量计量链路、billing E2E（合并可能影响 Go 依赖）
 - [ ] 用户合同创建 UI 应明确要求 package 或自动选择合法 package（避免 500）
