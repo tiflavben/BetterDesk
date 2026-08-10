@@ -437,6 +437,9 @@ func main() {
 		apiSrv.SetKeyPair(kp)
 		apiSrv.SetTimeSyncService(timeSyncSvc)
 		apiSrv.SetBillingService(billingSvc)
+		if ticketDB != nil {
+			apiSrv.SetRelayTicketDB(ticketDB)
+		}
 
 		// LDAP provider (loads config from DB, hot-reloadable via API)
 		apiSrv.InitLDAP()
@@ -544,6 +547,9 @@ func main() {
 		apiSrv.SetBandwidthLimiter(bwLimiter)
 		apiSrv.SetAuditLogger(auditLogger)
 		apiSrv.SetBillingService(billingSvc)
+		if ticketDB != nil {
+			apiSrv.SetRelayTicketDB(ticketDB)
+		}
 		apiSrv.SetEventBus(sig.EventBus())
 		apiSrv.SetMetrics(mc)
 		apiSrv.SetJWTManager(jwtManager)

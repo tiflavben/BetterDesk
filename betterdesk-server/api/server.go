@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -76,6 +77,7 @@ type Server struct {
 	keyPair           *crypto.KeyPair      // Ed25519 keypair for signing
 	cdapGw            *cdap.Gateway        // CDAP gateway (nil if CDAP disabled)
 	meshGw            *meshcentral.Gateway // MeshCentral compat (nil if disabled)
+	relayTicketDB     *sql.DB              // shared relay ticket/traffic store (telemetry)
 	ldapProvider      ldapAuthProvider     // LDAP auth provider (nil if not configured)
 	oidcProvider      *auth.OIDCProvider   // OIDC/OAuth2 auth provider (nil if not configured)
 	clientTFASessions *tfaSessionStore
@@ -246,6 +248,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// Health and public key are needed for client bootstrap. Detailed runtime
 	// stats use the same allowlist/auth policy as Prometheus metrics.
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+	mux.HandleFunc("GET /api/scaling/relays", s.requirePermission(auth.PermServerConfig, s.handleRelayScalingRelays))
 	mux.HandleFunc("GET /api/server/stats", s.metricsGuard(s.handleServerStats))
 	mux.HandleFunc("GET /api/server/pubkey", s.handlePubKey)
 

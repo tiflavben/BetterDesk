@@ -17,6 +17,7 @@ const router = express.Router();
 const crypto = require('crypto');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const db = require('../services/database');
+const { getRelayScaling } = require('../services/betterdeskApi');
 
 // ---------------------------------------------------------------------------
 // Storage helpers — JSON arrays kept in the `settings` table
@@ -139,7 +140,16 @@ router.get('/scaling', requireAuth, requirePermission('server.config'), (req, re
 router.get('/api/panel/scaling/relays', requireAuth, requirePermission('server.config'), async (req, res) => {
     try {
         const relays = await loadJsonArray(KEY_RELAYS);
-        res.json({ data: relays });
+        // Merge live telemetry from the Go server (TCP probe per RELAY_SERVERS
+        // node + shared-store stats) so status/latency show real values.
+        const telemetry = await getRelayScaling();
+        const live = (telemetry.success && telemetry.data?.relays) ? telemetry.data.relays : [];
+        const merged = relays.map(r => {
+            const t = live.find(x => x.address === r.address)
+                || live.find(x => x.address && x.address.split(':')[0] === String(r.address).split(':')[0]);
+            return t ? { ...r, status: t.status, latency_ms: t.latency_ms } : r;
+        });
+        res.json({ data: merged, telemetry: telemetry.success ? telemetry.data : null });
     } catch (err) {
         console.error('[Scaling] list relays:', err.message);
         res.status(500).json({ error: 'failed to load relay nodes' });
@@ -212,12 +222,35 @@ router.delete('/api/panel/scaling/relays/:nodeId', requireAuth, requirePermissio
 });
 
 // Health and metrics — no live data yet, return sensible empty placeholders
-router.get('/api/panel/scaling/relays/:nodeId/health', requireAuth, requirePermission('server.config'), (req, res) => {
-    res.json({ data: null, note: 'live relay telemetry not yet available' });
+router.get('/api/panel/scaling/relays/:nodeId/health', requireAuth, requirePermission('server.config'), async (req, res) => {
+    try {
+        const result = await getRelayScaling();
+        if (!result.success) {
+            return res.status(502).json({ data: null, error: result.error });
+        }
+        const relays = result.data?.relays || [];
+        const node = relays.find(r => r.address === req.params.nodeId)
+            || relays.find(r => r.address && r.address.split(':')[0] === req.params.nodeId);
+        res.json({ data: node || null });
+    } catch (err) {
+        res.status(500).json({ data: null, error: err.message });
+    }
 });
 
-router.get('/api/panel/scaling/relays/:nodeId/metrics', requireAuth, requirePermission('server.config'), (req, res) => {
-    res.json({ data: [], note: 'live relay telemetry not yet available' });
+router.get('/api/panel/scaling/relays/:nodeId/metrics', requireAuth, requirePermission('server.config'), async (req, res) => {
+    try {
+        const result = await getRelayScaling();
+        if (!result.success) {
+            return res.status(502).json({ data: [], error: result.error });
+        }
+        const relays = result.data?.relays || [];
+        const node = relays.find(r => r.address === req.params.nodeId)
+            || relays.find(r => r.address && r.address.split(':')[0] === req.params.nodeId);
+        // Point-in-time telemetry snapshot (the console polls this endpoint).
+        res.json({ data: node ? [node] : [] });
+    } catch (err) {
+        res.status(500).json({ data: [], error: err.message });
+    }
 });
 
 // ---------------------------------------------------------------------------

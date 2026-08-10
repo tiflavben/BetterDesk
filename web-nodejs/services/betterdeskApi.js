@@ -111,6 +111,16 @@ async function getServerStats() {
     }
 }
 
+// GET /api/scaling/relays — live relay tier telemetry from the Go server.
+async function getRelayScaling() {
+    try {
+        const { data } = await apiClient.get('/scaling/relays');
+        return wrap(data);
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 // ========================== Peers (Devices) =================================
 
 /**
@@ -1305,6 +1315,7 @@ module.exports = {
     getHealth,
     getServerStats,
     getServerInfo,
+    getRelayScaling,
     // Peers
     getAllPeers,
     getPeer,
