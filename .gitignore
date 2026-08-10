@@ -189,6 +189,9 @@ betterdesk-server/*.pem
 betterdesk-server/id_ed25519*
 betterdesk-server/test_*.go
 betterdesk-server/_test_*
+# Fork-local: root-level cross-compiled server binaries & sensitive GitHub PAT (never commit)
+/bin/
+/github_pat.txt
 
 # --- Root-level image duplicates (originals in web-nodejs/public/img/) ---
 /betterdesk.png

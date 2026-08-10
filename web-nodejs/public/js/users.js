@@ -793,14 +793,14 @@
                 try {
                     const existing = users.find(u => Number(u.id) === Number(editingUserId))?.contract;
                     if (existing && existing.id) {
-                        await Utils.api(`/api/billing/contracts/${existing.id}`, {
-                            method: 'PATCH',
+                        await Utils.api(`/api/panel/billing/contracts/${existing.id}`, {
+                            method: 'PUT',
                             body: contractPatch
                         });
                     } else {
                         // Create a user-scoped contract; the server auto-resolves
                         // (or auto-creates) a default package, so no package lookup needed.
-                        await Utils.api('/api/billing/contracts', {
+                        await Utils.api('/api/panel/billing/contracts', {
                             method: 'POST',
                             body: Object.assign({
                                 target_type: 'user',
