@@ -225,6 +225,13 @@ func (s *Server) handleUpdateBillingContract(w http.ResponseWriter, r *http.Requ
 			existing.UsedBytes = u
 		}
 	}
+	// device_limit: max concurrently bound devices for the target (0 = unlimited).
+	if raw, ok := patch["device_limit"]; ok {
+		var dl int
+		if err := json.Unmarshal(raw, &dl); err == nil && dl >= 0 {
+			existing.DeviceLimit = dl
+		}
+	}
 	if err := s.db.UpdateBillingContract(existing); err != nil {
 		writeInternalError(w, err, "UpdateBillingContract")
 		return

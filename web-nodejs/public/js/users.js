@@ -413,6 +413,24 @@
         emptyState?.classList.add('hidden');
         
         tableBody.innerHTML = users.map(user => {
+            const c = user.contract || null;
+            const deviceCount = user.device_count ?? 0;
+            const deviceLimit = c ? c.device_limit ?? 0 : 0;
+            const limitText = deviceLimit > 0 ? deviceLimit : _('users.unlimited');
+            const limitCls = deviceLimit > 0 && deviceCount > deviceLimit ? 'usage-over' : '';
+            // traffic: used / quota (MB)
+            const usedMB = c ? Math.round((c.used_bytes || 0) / 1048576) : 0;
+            const quotaMB = c ? Math.round((c.quota_bytes || 0) / 1048576) : 0;
+            const quotaText = quotaMB > 0 ? quotaMB + ' MB' : _('users.unlimited');
+            const trafficOver = c && c.quota_bytes > 0 && c.used_bytes >= c.quota_bytes;
+            // expiry
+            let expiryText = '—';
+            let expiryCls = '';
+            if (c && c.valid_until) {
+                const exp = new Date(c.valid_until.replace(' ', 'T'));
+                expiryText = Utils.formatDate(c.valid_until);
+                if (exp < new Date()) expiryCls = 'text-danger';
+            }
             const roleIcons = {
                 super_admin: 'shield_person',
                 admin: 'admin_panel_settings',
@@ -459,6 +477,15 @@
                         <span class="skeleton skeleton-text" style="width: 80px; height: 14px;"></span>
                     </div>
                 </td>
+                <td><span class="user-device-count">${deviceCount}</span></td>
+                <td><span class="user-device-limit ${limitCls}">${limitText}</span></td>
+                <td>
+                    <span class="user-traffic ${trafficOver ? 'text-danger' : ''}"
+                          title="${usedMB} / ${quotaText}">
+                        ${usedMB} / ${quotaText}
+                    </span>
+                </td>
+                <td><span class="user-expiry ${expiryCls}">${expiryText}</span></td>
                 <td>${Utils.formatDate(user.created_at)}</td>
                 <td>${user.last_login ? Utils.formatDate(user.last_login) : '<span class="text-muted">' + _('users.never') + '</span>'}</td>
                 <td>
@@ -610,6 +637,16 @@
                 if (directDevices) {
                     directDevices.value = Array.isArray(user.peer_grants) ? user.peer_grants.join(', ') : '';
                 }
+                // Contract management fields
+                const c = user.contract || null;
+                const dlInput = document.getElementById('contract-device-limit');
+                if (dlInput) dlInput.value = c ? (c.device_limit ?? 0) : 0;
+                const qInput = document.getElementById('contract-quota-mb');
+                if (qInput) qInput.value = c ? Math.round((c.quota_bytes || 0) / 1048576) : 0;
+                const expInput = document.getElementById('contract-expiry');
+                if (expInput && c && c.valid_until) {
+                    expInput.value = String(c.valid_until).slice(0, 10);
+                }
             }
         });
     }
@@ -697,6 +734,20 @@
         const strategyGuid = document.getElementById('user-strategy')?.value || '';
         const peerIdsRaw = document.getElementById('user-direct-devices')?.value || '';
         const peerIds = peerIdsRaw.split(/[,;\s]+/).map(v => v.trim()).filter(Boolean);
+        // Contract management fields (user-scoped billing contract)
+        const deviceLimitRaw = document.getElementById('contract-device-limit')?.value;
+        const quotaMbRaw = document.getElementById('contract-quota-mb')?.value;
+        const expiryRaw = document.getElementById('contract-expiry')?.value;
+        const contractPatch = {};
+        if (deviceLimitRaw !== undefined && deviceLimitRaw !== '') {
+            contractPatch.device_limit = Math.max(0, Number(deviceLimitRaw) || 0);
+        }
+        if (quotaMbRaw !== undefined && quotaMbRaw !== '') {
+            contractPatch.quota_bytes = Math.max(0, Number(quotaMbRaw) || 0) * 1048576;
+        }
+        if (expiryRaw !== undefined && expiryRaw !== '') {
+            contractPatch.valid_until = expiryRaw + 'T23:59:59+08:00';
+        }
         
         // Validate
         if (!editingUserId) {
@@ -735,6 +786,37 @@
                     body: { username, password, role, email, groupGuids, folderIds, peerIds, strategyGuid }
                 });
                 Notifications.success(_('users.user_created'));
+            }
+
+            // Persist contract management fields (device limit / quota / expiry)
+            if (Object.keys(contractPatch).length > 0) {
+                try {
+                    const existing = users.find(u => Number(u.id) === Number(editingUserId))?.contract;
+                    if (existing && existing.id) {
+                        await Utils.api(`/api/billing/contracts/${existing.id}`, {
+                            method: 'PATCH',
+                            body: contractPatch
+                        });
+                    } else {
+                        // Create a user-scoped contract; reuse any package id.
+                        let pkgId = '';
+                        try {
+                            const pkgs = await Utils.api('/api/billing/packages');
+                            pkgId = (pkgs.packages && pkgs.packages[0]?.id) || '';
+                        } catch { /* no packages */ }
+                        await Utils.api('/api/billing/contracts', {
+                            method: 'POST',
+                            body: Object.assign({
+                                target_type: 'user',
+                                target_key: username,
+                                package_id: pkgId,
+                                status: 'active'
+                            }, contractPatch)
+                        });
+                    }
+                } catch (e) {
+                    Notifications.error(e.message || _('errors.server_error'));
+                }
             }
             
             Modal.close();

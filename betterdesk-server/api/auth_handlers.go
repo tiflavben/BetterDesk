@@ -434,6 +434,20 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		IsServerAdmin bool   `json:"is_server_admin"`
 		CreatedAt     string `json:"created_at"`
 		LastLogin     string `json:"last_login,omitempty"`
+		// User management enrichment: connected device count and the user's
+		// billing contract summary (traffic quota/usage, device limit, expiry).
+		DeviceCount int            `json:"device_count"`
+		Contract    map[string]any `json:"contract,omitempty"`
+	}
+
+	// Device counts by owner username (peers.user), one pass for all users.
+	deviceCounts := map[string]int{}
+	if peers, err := s.db.ListPeers(false); err == nil {
+		for _, p := range peers {
+			if p.User != "" {
+				deviceCounts[p.User]++
+			}
+		}
 	}
 
 	result := make([]userView, len(users))
@@ -442,12 +456,34 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		if provider == "" {
 			provider = db.AuthProviderLocal
 		}
-		result[i] = userView{
-			ID: u.ID, Username: u.Username, Role: u.Role,
-			AuthProvider: provider,
-			TOTPEnabled:  u.TOTPEnabled, IsServerAdmin: u.IsServerAdmin,
-			CreatedAt: u.CreatedAt, LastLogin: u.LastLogin,
+		v := userView{
+			ID:            u.ID,
+			Username:      u.Username,
+			Role:          u.Role,
+			AuthProvider:  provider,
+			TOTPEnabled:   u.TOTPEnabled,
+			IsServerAdmin: u.IsServerAdmin,
+			CreatedAt:     u.CreatedAt,
+			LastLogin:     u.LastLogin,
+			DeviceCount:   deviceCounts[u.Username],
 		}
+		// Attach the user-scoped billing contract, if one exists.
+		if c, err := s.db.GetActiveBillingContract(db.BillingTargetUser, u.Username); err == nil && c != nil {
+			until := ""
+			if c.ValidUntil != nil {
+				until = c.ValidUntil.Format("2006-01-02 15:04:05")
+			}
+			v.Contract = map[string]any{
+				"id":                c.ID,
+				"status":            c.Status,
+				"quota_bytes":       c.QuotaBytes,
+				"used_bytes":        c.UsedBytes,
+				"device_limit":      c.DeviceLimit,
+				"remaining_minutes": c.RemainingMinutes,
+				"valid_until":       until,
+			}
+		}
+		result[i] = v
 	}
 	writeJSON(w, http.StatusOK, result)
 }

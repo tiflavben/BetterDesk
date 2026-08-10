@@ -647,3 +647,11 @@
         flex-wrap: wrap;
     }
 }
+
+/* User contract management (device limit / traffic quota / expiry) */
+.contract-manage-section { margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border-color, rgba(128,128,128,.25)); }
+.contract-manage-title { font-weight: 600; display: block; margin-bottom: 2px; }
+.contract-manage-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 10px; }
+@media (max-width: 640px) { .contract-manage-grid { grid-template-columns: 1fr; } }
+.user-device-count { font-weight: 600; }
+.user-device-limit.usage-over, .user-traffic.text-danger, .user-expiry.text-danger { color: var(--danger-color, #e5484d); font-weight: 600; }

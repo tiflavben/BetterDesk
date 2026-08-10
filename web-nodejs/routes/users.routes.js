@@ -8,6 +8,7 @@ const router = express.Router();
 const authService = require('../services/authService');
 const db = require('../services/database');
 const { apiClient } = require('../services/betterdeskApi');
+const betterdeskApi = require('../services/betterdeskApi');
 const { assertSafeApiId } = require('../lib/goApiPath');
 const userSync = require('../services/userSync');
 const userScopeService = require('../services/userScopeService');
@@ -281,6 +282,23 @@ router.get('/api/users', requireAuth, requirePermission('user.view'), async (req
         
         // Remove sensitive data
         const safeUsers = await Promise.all(users.map(u => serializeUserForList(u)));
+        
+        // Enrich with Go-side user management data (device count + billing
+        // contract summary) so the panel can show/limit devices & traffic.
+        try {
+            const goUsers = await betterdeskApi.getUsers();
+            const goList = Array.isArray(goUsers) ? goUsers : (goUsers.data && (goUsers.data.users || goUsers.data)) || [];
+            const byName = new Map(goList.map(u => [u.username, u]));
+            for (const u of safeUsers) {
+                const g = byName.get(u.username);
+                if (g) {
+                    u.device_count = g.device_count || 0;
+                    if (g.contract) u.contract = g.contract;
+                }
+            }
+        } catch (err) {
+            console.warn('Users enrichment skipped:', err.message);
+        }
         
         res.json({
             success: true,

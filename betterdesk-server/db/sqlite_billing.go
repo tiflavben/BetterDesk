@@ -136,10 +136,10 @@ func (s *SQLiteDB) CreateBillingContract(c *BillingContract) error {
 		overage = sql.NullFloat64{Float64: *c.OverageRate, Valid: true}
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO billing_contracts (id, target_type, target_key, package_id, status, remaining_minutes, overage_rate, hourly_rate, currency, quota_bytes, used_bytes, valid_from, valid_until, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+		`INSERT INTO billing_contracts (id, target_type, target_key, package_id, status, remaining_minutes, overage_rate, hourly_rate, currency, quota_bytes, used_bytes, device_limit, valid_from, valid_until, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
 		c.ID, c.TargetType, c.TargetKey, c.PackageID, c.Status, c.RemainingMinutes, overage, c.HourlyRate, c.Currency,
-		c.QuotaBytes, c.UsedBytes,
+		c.QuotaBytes, c.UsedBytes, c.DeviceLimit,
 		formatSQLiteTimePtr(c.ValidFrom), formatSQLiteTimePtr(c.ValidUntil),
 	)
 	return err
@@ -191,7 +191,7 @@ const billingContractTargetNameSQL = `
 
 func (s *SQLiteDB) queryBillingContract(where string, args ...any) (*BillingContract, error) {
 	query := `SELECT c.id, c.target_type, c.target_key, c.package_id, c.status, c.remaining_minutes, c.overage_rate,
-		c.hourly_rate, c.currency, c.quota_bytes, c.used_bytes, c.valid_from, c.valid_until, c.created_at, c.updated_at,
+		c.hourly_rate, c.currency, c.quota_bytes, c.used_bytes, c.device_limit, c.valid_from, c.valid_until, c.created_at, c.updated_at,
 		COALESCE(p.name, ''), ` + billingContractTargetNameSQL + `
 		FROM billing_contracts c
 		LEFT JOIN billing_packages p ON p.id = c.package_id ` + where
@@ -201,7 +201,7 @@ func (s *SQLiteDB) queryBillingContract(where string, args ...any) (*BillingCont
 	var validFrom, validUntil, createdAt, updatedAt sql.NullString
 	err := s.db.QueryRow(query, args...).Scan(
 		&c.ID, &c.TargetType, &c.TargetKey, &c.PackageID, &c.Status, &c.RemainingMinutes, &overage,
-		&c.HourlyRate, &c.Currency, &c.QuotaBytes, &c.UsedBytes, &validFrom, &validUntil, &createdAt, &updatedAt,
+		&c.HourlyRate, &c.Currency, &c.QuotaBytes, &c.UsedBytes, &c.DeviceLimit, &validFrom, &validUntil, &createdAt, &updatedAt,
 		&c.PackageName, &c.TargetName,
 	)
 	if err != nil {
@@ -249,7 +249,7 @@ func (s *SQLiteDB) ListBillingContracts(filter BillingContractFilter) ([]*Billin
 		args = append(args, filter.Status)
 	}
 	query := `SELECT c.id, c.target_type, c.target_key, c.package_id, c.status, c.remaining_minutes, c.overage_rate,
-		c.hourly_rate, c.currency, c.quota_bytes, c.used_bytes, c.valid_from, c.valid_until, c.created_at, c.updated_at,
+		c.hourly_rate, c.currency, c.quota_bytes, c.used_bytes, c.device_limit, c.valid_from, c.valid_until, c.created_at, c.updated_at,
 		COALESCE(p.name, ''), ` + billingContractTargetNameSQL + `
 		FROM billing_contracts c
 		LEFT JOIN billing_packages p ON p.id = c.package_id`
@@ -269,7 +269,7 @@ func (s *SQLiteDB) ListBillingContracts(filter BillingContractFilter) ([]*Billin
 		var validFrom, validUntil, createdAt, updatedAt sql.NullString
 		if err := rows.Scan(
 			&c.ID, &c.TargetType, &c.TargetKey, &c.PackageID, &c.Status, &c.RemainingMinutes, &overage,
-			&c.HourlyRate, &c.Currency, &c.QuotaBytes, &c.UsedBytes, &validFrom, &validUntil, &createdAt, &updatedAt,
+			&c.HourlyRate, &c.Currency, &c.QuotaBytes, &c.UsedBytes, &c.DeviceLimit, &validFrom, &validUntil, &createdAt, &updatedAt,
 			&c.PackageName, &c.TargetName,
 		); err != nil {
 			return nil, err
@@ -306,9 +306,9 @@ func (s *SQLiteDB) UpdateBillingContract(c *BillingContract) error {
 		overage = sql.NullFloat64{Float64: *c.OverageRate, Valid: true}
 	}
 	_, err := s.db.Exec(
-		`UPDATE billing_contracts SET status=?, remaining_minutes=?, overage_rate=?, hourly_rate=?, currency=?, quota_bytes=?, used_bytes=?, valid_from=?, valid_until=?, updated_at=datetime('now') WHERE id=?`,
+		`UPDATE billing_contracts SET status=?, remaining_minutes=?, overage_rate=?, hourly_rate=?, currency=?, quota_bytes=?, used_bytes=?, device_limit=?, valid_from=?, valid_until=?, updated_at=datetime('now') WHERE id=?`,
 		c.Status, c.RemainingMinutes, overage, c.HourlyRate, c.Currency,
-		c.QuotaBytes, c.UsedBytes,
+		c.QuotaBytes, c.UsedBytes, c.DeviceLimit,
 		formatSQLiteTimePtr(c.ValidFrom), formatSQLiteTimePtr(c.ValidUntil), c.ID,
 	)
 	return err

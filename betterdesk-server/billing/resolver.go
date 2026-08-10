@@ -80,7 +80,7 @@ func NormalizeContractTarget(body *db.BillingContract) error {
 		return fmt.Errorf("target_type and target_key required")
 	}
 	switch body.TargetType {
-	case db.BillingTargetOrg, db.BillingTargetDeviceGroup, db.BillingTargetFolder, db.BillingTargetDevice:
+	case db.BillingTargetOrg, db.BillingTargetUser, db.BillingTargetDeviceGroup, db.BillingTargetFolder, db.BillingTargetDevice:
 		return nil
 	default:
 		return fmt.Errorf("invalid target_type")

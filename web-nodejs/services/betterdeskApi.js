@@ -121,6 +121,17 @@ async function getRelayScaling() {
     }
 }
 
+// GET /api/users — user list enriched with device counts and contract
+// summaries (user management page).
+async function getUsers() {
+    try {
+        const { data } = await apiClient.get('/users');
+        return data;
+    } catch (err) {
+        throw new Error('go /users: ' + (err.message || err));
+    }
+}
+
 // ========================== Peers (Devices) =================================
 
 /**
@@ -1316,6 +1327,7 @@ module.exports = {
     getServerStats,
     getServerInfo,
     getRelayScaling,
+    getUsers,
     // Peers
     getAllPeers,
     getPeer,

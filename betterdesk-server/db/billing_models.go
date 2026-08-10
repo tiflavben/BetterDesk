@@ -5,6 +5,7 @@ import "time"
 // Billing package / contract target types.
 const (
 	BillingTargetOrg         = "org"
+	BillingTargetUser        = "user"
 	BillingTargetDeviceGroup = "device_group"
 	BillingTargetFolder      = "folder"
 	BillingTargetDevice      = "device"
@@ -35,8 +36,9 @@ type BillingContract struct {
 	Currency         string     `json:"currency"`
 	ValidFrom        *time.Time `json:"valid_from,omitempty"`
 	ValidUntil       *time.Time `json:"valid_until,omitempty"`
-	QuotaBytes       int64      `json:"quota_bytes,omitempty"` // traffic quota (0 = unlimited)
-	UsedBytes        int64      `json:"used_bytes,omitempty"`  // cumulative bytes consumed
+	QuotaBytes       int64      `json:"quota_bytes,omitempty"`  // traffic quota (0 = unlimited)
+	UsedBytes        int64      `json:"used_bytes,omitempty"`   // cumulative bytes consumed
+	DeviceLimit      int        `json:"device_limit,omitempty"` // max devices (0 = unlimited)
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 	PackageName      string     `json:"package_name,omitempty"`

@@ -591,6 +591,7 @@ func (pg *PostgresDB) Migrate() error {
 		// billing_contracts: traffic quota (quota_bytes / used_bytes)
 		`ALTER TABLE billing_contracts ADD COLUMN IF NOT EXISTS quota_bytes BIGINT NOT NULL DEFAULT 0`,
 		`ALTER TABLE billing_contracts ADD COLUMN IF NOT EXISTS used_bytes BIGINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE billing_contracts ADD COLUMN IF NOT EXISTS device_limit INTEGER NOT NULL DEFAULT 0`,
 	}
 
 	for _, ddl := range columnMigrations {
