@@ -6,7 +6,14 @@ const express = require('express');
 const router = express.Router();
 const keyService = require('../services/keyService');
 const clientConfigHost = require('../services/clientConfigHost');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requirePermission } = require('../middleware/auth');
+
+// Admin-class roles (mirrors server.js res.locals.isAdminUser) may reveal the
+// plaintext API key; all other roles only ever get the masked form.
+const ADMIN_CLASS_ROLES = ['admin', 'super_admin', 'server_admin', 'global_admin'];
+function isAdminClassRole(role) {
+    return ADMIN_CLASS_ROLES.includes(role);
+}
 
 function resolveClientEndpoints(req) {
     const queryHost = typeof req.query.host === 'string' ? req.query.host : '';
@@ -126,9 +133,16 @@ router.get('/api/keys/public/download', requireAuth, async (req, res) => {
 /**
  * GET /api/keys/api - Get API key (masked)
  */
-router.get('/api/keys/api', requireAuth, (req, res) => {
+router.get('/api/keys/api', requireAuth, requirePermission('server.config'), (req, res) => {
     try {
         const show = req.query.show === 'true';
+        // Only admin-class roles may request the plaintext API key.
+        if (show && !isAdminClassRole(req.session.user.role)) {
+            return res.status(403).json({
+                success: false,
+                error: req.t('errors.forbidden')
+            });
+        }
         const apiKey = keyService.getApiKey(!show);
         
         if (!apiKey) {

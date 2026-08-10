@@ -26,12 +26,12 @@
         // Global config for viewer
         window.BetterDesk = {
             lang: '<%= lang || "en" %>',
-            translations: <%- JSON.stringify(translations || {}) %>,
+            translations: <%- JSON.stringify(translations || {}).replace(/</g, '\\u003c') %>,
             csrfToken: '<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>',
-            user: <%- JSON.stringify(user || null) %>,
+            user: <%- JSON.stringify(user || null).replace(/</g, '\\u003c') %>,
             serverPubKey: '<%= typeof serverPubKey !== 'undefined' ? serverPubKey : '' %>',
-            branding: <%- JSON.stringify(branding || {}) %>,
-            availableLanguages: <%- JSON.stringify(availableLanguageList || []) %>
+            branding: <%- JSON.stringify(branding || {}).replace(/</g, '\\u003c') %>,
+            availableLanguages: <%- JSON.stringify(availableLanguageList || []).replace(/</g, '\\u003c') %>
         };
     </script>
 

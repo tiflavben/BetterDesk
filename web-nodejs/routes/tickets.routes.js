@@ -100,6 +100,44 @@ function requireAdminOrOperator(req, res, next) {
     return res.status(403).json({ error: 'Insufficient permissions' });
 }
 
+// Roles with full ticket management access (admin-class + operator support role).
+function isFullTicketAccessRole(role) {
+    return ['admin', 'super_admin', 'global_admin', 'server_admin', 'operator'].includes(role);
+}
+
+/**
+ * True when the signed-in user may access the ticket: full-access roles see
+ * everything; everyone else (viewer, etc.) is limited to tickets assigned to
+ * them or created by them.
+ */
+function canAccessTicket(user, ticket) {
+    if (!ticket) return false;
+    if (isFullTicketAccessRole(user.role)) return true;
+    return ticket.assigned_to === user.username || ticket.created_by === user.username;
+}
+
+/**
+ * Middleware: load the ticket and enforce per-ticket read access for detail,
+ * comments and attachments routes. Sets req.ticket on success.
+ */
+async function requireTicketReadAccess(req, res, next) {
+    try {
+        const adapter = getAdapter();
+        const ticket = await adapter.getTicketById(+req.params.id);
+        if (!ticket) {
+            return res.status(404).json({ error: 'Ticket not found' });
+        }
+        if (!canAccessTicket(req.session.user, ticket)) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        req.ticket = ticket;
+        next();
+    } catch (err) {
+        console.error('[Tickets] Access check error:', err.message);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+}
+
 // ---------------------------------------------------------------------------
 //  Admin/Operator endpoints
 // ---------------------------------------------------------------------------
@@ -133,7 +171,21 @@ router.get('/', requireAuth, async (req, res) => {
 router.get('/stats', requireAuth, async (req, res) => {
     try {
         const adapter = getAdapter();
-        const stats = await adapter.getTicketStats();
+        const user = req.session.user;
+        let stats;
+        if (isFullTicketAccessRole(user.role)) {
+            stats = await adapter.getTicketStats();
+        } else {
+            // Restricted roles (viewer) only see stats for their own tickets.
+            const mine = await adapter.getAllTickets({ assigned_to: user.username });
+            stats = {
+                total: mine.length,
+                open: mine.filter(t => t.status === 'open').length,
+                in_progress: mine.filter(t => t.status === 'in_progress').length,
+                resolved: mine.filter(t => t.status === 'resolved').length,
+                closed: mine.filter(t => t.status === 'closed').length,
+            };
+        }
         res.json(stats);
     } catch (err) {
         console.error('[Tickets] Stats error:', err.message);
@@ -192,13 +244,10 @@ router.post('/', uploadLimiter, requireAdminOrOperator, async (req, res) => {
 /**
  * GET /api/tickets/:id — Get ticket detail (with comments and attachments).
  */
-router.get('/:id(\\d+)', requireAuth, async (req, res) => {
+router.get('/:id(\\d+)', requireAuth, requireTicketReadAccess, async (req, res) => {
     try {
         const adapter = getAdapter();
-        const ticket = await adapter.getTicketById(+req.params.id);
-        if (!ticket) {
-            return res.status(404).json({ error: 'Ticket not found' });
-        }
+        const ticket = req.ticket;
 
         const comments = await adapter.getTicketComments(ticket.id);
         const attachments = await adapter.getTicketAttachments(ticket.id);
@@ -316,13 +365,10 @@ router.delete('/:id(\\d+)', uploadLimiter, requireAdminOrOperator, async (req, r
 /**
  * POST /api/tickets/:id/comments — Add comment to ticket.
  */
-router.post('/:id(\\d+)/comments', uploadLimiter, requireAuth, async (req, res) => {
+router.post('/:id(\\d+)/comments', uploadLimiter, requireAuth, requireTicketReadAccess, async (req, res) => {
     try {
         const adapter = getAdapter();
-        const ticket = await adapter.getTicketById(+req.params.id);
-        if (!ticket) {
-            return res.status(404).json({ error: 'Ticket not found' });
-        }
+        const ticket = req.ticket;
 
         const { body, is_internal } = req.body;
         if (!body || !body.trim()) {
@@ -349,10 +395,10 @@ router.post('/:id(\\d+)/comments', uploadLimiter, requireAuth, async (req, res) 
 /**
  * GET /api/tickets/:id/comments — List ticket comments.
  */
-router.get('/:id(\\d+)/comments', requireAuth, async (req, res) => {
+router.get('/:id(\\d+)/comments', requireAuth, requireTicketReadAccess, async (req, res) => {
     try {
         const adapter = getAdapter();
-        const comments = await adapter.getTicketComments(+req.params.id);
+        const comments = await adapter.getTicketComments(req.ticket.id);
         const filtered = req.session.user.role === 'viewer'
             ? comments.filter(c => !c.is_internal)
             : comments;
@@ -416,10 +462,10 @@ router.post('/:id(\\d+)/attachments', uploadLimiter, requireAdminOrOperator, asy
 /**
  * GET /api/tickets/:id/attachments — List attachments.
  */
-router.get('/:id(\\d+)/attachments', fileAccessLimiter, requireAuth, async (req, res) => {
+router.get('/:id(\\d+)/attachments', fileAccessLimiter, requireAuth, requireTicketReadAccess, async (req, res) => {
     try {
         const adapter = getAdapter();
-        const attachments = await adapter.getTicketAttachments(+req.params.id);
+        const attachments = await adapter.getTicketAttachments(req.ticket.id);
         res.json({
             attachments: attachments.map(a => ({
                 id: a.id,
@@ -445,6 +491,12 @@ router.get('/attachments/:aid(\\d+)', fileAccessLimiter, requireAuth, async (req
         const att = await adapter.getAttachmentById(+req.params.aid);
         if (!att) {
             return res.status(404).json({ error: 'Attachment not found' });
+        }
+        // Enforce ticket-level access: restricted roles may only download
+        // attachments of tickets they can access.
+        const ticket = await adapter.getTicketById(att.ticket_id);
+        if (!canAccessTicket(req.session.user, ticket)) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
         }
         const filePath = confinedAttachmentPath(att.storage_path);
         if (!fs.existsSync(filePath)) {

@@ -25,13 +25,13 @@ const tls     = require('tls');
 const https   = require('https');
 const dgram   = require('dgram');
 const dns     = require('dns');
-const { requireAuth, requirePermission } = require('../middleware/auth');
+const { requireAuth, requirePermission, requireAdmin } = require('../middleware/auth');
 const { bodyInt, bodyBool } = require('../lib/bodyScalars');
 const { assertSafeResolvedHost, SsrfBlockedError } = require('../lib/ssrfGuard');
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
-router.get('/toolkit', requireAuth, (req, res) => {
+router.get('/toolkit', requireAdmin, (req, res) => {
     res.render('toolkit', {
         title: req.t('toolkit.title'),
         activePage: 'toolkit',
@@ -40,7 +40,7 @@ router.get('/toolkit', requireAuth, (req, res) => {
 
 // ── SSL Certificate Inspector ───────────────────────────────────────────────
 
-router.post('/api/toolkit/ssl', requireAuth, async (req, res) => {
+router.post('/api/toolkit/ssl', requireAdmin, async (req, res) => {
     const { host, port } = req.body;
     if (!host || typeof host !== 'string') {
         return res.status(400).json({ success: false, error: 'Host is required' });
@@ -52,7 +52,7 @@ router.post('/api/toolkit/ssl', requireAuth, async (req, res) => {
     }
 
     try {
-        await assertSafeResolvedHost(cleanHost, { allowPrivate: true });
+        await assertSafeResolvedHost(cleanHost);
     } catch (err) {
         const msg = err instanceof SsrfBlockedError ? err.message : 'Invalid hostname';
         return res.status(400).json({ success: false, error: msg });
@@ -130,7 +130,7 @@ router.post('/api/toolkit/ssl', requireAuth, async (req, res) => {
 
 // ── Hash Generator ──────────────────────────────────────────────────────────
 
-router.post('/api/toolkit/hash', requireAuth, (req, res) => {
+router.post('/api/toolkit/hash', requireAdmin, (req, res) => {
     const { text, algorithm } = req.body;
     if (typeof text !== 'string') {
         return res.status(400).json({ success: false, error: 'Text is required' });
@@ -152,7 +152,7 @@ router.post('/api/toolkit/hash', requireAuth, (req, res) => {
 
 // ── Password Generator ──────────────────────────────────────────────────────
 
-router.post('/api/toolkit/password', requireAuth, (req, res) => {
+router.post('/api/toolkit/password', requireAdmin, (req, res) => {
     let { length, uppercase, lowercase, digits, symbols } = req.body;
     length = bodyInt(length, 16, { min: 4, max: 128 });
 
@@ -189,7 +189,7 @@ router.post('/api/toolkit/password', requireAuth, (req, res) => {
 
 // ── Base64 Encode / Decode ──────────────────────────────────────────────────
 
-router.post('/api/toolkit/base64', requireAuth, (req, res) => {
+router.post('/api/toolkit/base64', requireAdmin, (req, res) => {
     const { text, mode } = req.body;
     if (typeof text !== 'string') {
         return res.status(400).json({ success: false, error: 'Text is required' });
@@ -249,7 +249,7 @@ router.post('/api/toolkit/wol', requireAuth, requirePermission('device.connect')
 
 // ── Whois Lookup (DNS-based) ────────────────────────────────────────────────
 
-router.post('/api/toolkit/whois', requireAuth, async (req, res) => {
+router.post('/api/toolkit/whois', requireAdmin, async (req, res) => {
     const { domain } = req.body;
     if (!domain || typeof domain !== 'string') {
         return res.status(400).json({ success: false, error: 'Domain is required' });
@@ -261,7 +261,7 @@ router.post('/api/toolkit/whois', requireAuth, async (req, res) => {
     }
 
     try {
-        await assertSafeResolvedHost(clean, { allowPrivate: true });
+        await assertSafeResolvedHost(clean);
     } catch (err) {
         const msg = err instanceof SsrfBlockedError ? err.message : 'Invalid domain';
         return res.status(400).json({ success: false, error: msg });
@@ -285,7 +285,7 @@ router.post('/api/toolkit/whois', requireAuth, async (req, res) => {
 
 // ── URL Encoder / Decoder ───────────────────────────────────────────────────
 
-router.post('/api/toolkit/urlencode', requireAuth, (req, res) => {
+router.post('/api/toolkit/urlencode', requireAdmin, (req, res) => {
     const { text, mode } = req.body;
     if (typeof text !== 'string') {
         return res.status(400).json({ success: false, error: 'Text is required' });
@@ -309,7 +309,7 @@ router.post('/api/toolkit/urlencode', requireAuth, (req, res) => {
 
 // ── JWT Decoder (read-only, no verification) ────────────────────────────────
 
-router.post('/api/toolkit/jwt-decode', requireAuth, (req, res) => {
+router.post('/api/toolkit/jwt-decode', requireAdmin, (req, res) => {
     const { token } = req.body;
     if (!token || typeof token !== 'string') {
         return res.status(400).json({ success: false, error: 'Token is required' });

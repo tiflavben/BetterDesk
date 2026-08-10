@@ -133,11 +133,7 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'
         // Poll manifest every 8s while at least one platform is still building.
         (function () {
             const publicId = <%- JSON.stringify(bundle.public_id).replace(/</g, '\\u003c') %>;
-            const t = <%- JSON.stringify({
-                building: t('download.building'),
-                failed:   t('download.failed'),
-                download: t('download.download'),
-            }) %>;
+            const t = <%- JSON.stringify({ building: t('download.building'), failed: t('download.failed'), download: t('download.download') }).replace(/</g, '\\u003c') %>;
             function render(p) {
                 const slot = document.querySelector(
                     `[data-platform="${p.platform}"][data-arch="${p.arch}"][data-format="${p.format}"] [data-status-slot]`

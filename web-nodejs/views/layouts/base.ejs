@@ -36,10 +36,10 @@
         // Global config
         window.BetterDesk = {
             lang: '<%= lang || "en" %>',
-            translations: <%- JSON.stringify(translations || {}) %>,
+            translations: <%- JSON.stringify(translations || {}).replace(/</g, '\\u003c') %>,
             cacheVersion: '<%= cacheVersion %>',
             csrfToken: '<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>',
-            branding: <%- JSON.stringify(branding || {}) %>
+            branding: <%- JSON.stringify(branding || {}).replace(/</g, '\\u003c') %>
         };
     </script>
     <script src="/js/utils.js?v=<%= cacheVersion %>"></script>

@@ -83,12 +83,12 @@
     <script nonce="<%= cspNonce %>">
         window.BetterDesk = {
             lang: '<%= lang || "en" %>',
-            availableLanguages: <%- JSON.stringify(availableLanguageList || []) %>,
-            translations: <%- JSON.stringify(translations || {}) %>,
+            availableLanguages: <%- JSON.stringify(availableLanguageList || []).replace(/</g, '\\u003c') %>,
+            translations: <%- JSON.stringify(translations || {}).replace(/</g, '\\u003c') %>,
             cacheVersion: '<%= cacheVersion %>',
             csrfToken: '<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>',
-            user: <%- JSON.stringify(user || null) %>,
-            branding: <%- JSON.stringify(branding || {}) %>,
+            user: <%- JSON.stringify(user || null).replace(/</g, '\\u003c') %>,
+            branding: <%- JSON.stringify(branding || {}).replace(/</g, '\\u003c') %>,
             embed: <%= embed ? 'true' : 'false' %>,
             uiShell: '<%= shell %>'
         };

@@ -152,6 +152,25 @@ async function requireAuth(req, res, next) {
 }
 
 /**
+ * Require either a valid Bearer token (RustDesk client) or a panel session
+ * cookie before accepting audit event writes. Anonymous submissions are
+ * rejected — mirrors the dual-mode check used by GET /api/audit/conn.
+ */
+async function requireAuditWriteAuth(req, res, next) {
+    const token = extractBearerToken(req);
+    if (token) {
+        const user = await authService.validateAccessToken(token);
+        if (!user) return res.status(401).json({ error: 'Invalid or expired token' });
+        req.authUser = user;
+        return next();
+    }
+    if (req.session && req.session.userId) {
+        return next();
+    }
+    return res.status(401).json({ error: 'Authorization required' });
+}
+
+/**
  * Middleware: require admin role
  */
 function requireAdmin(req, res, next) {
@@ -1650,7 +1669,7 @@ router.get('/api/server-key/fingerprint', async (req, res) => {
  * Report a connection event from RustDesk client.
  * Body: { host_id, host_uuid, peer_id, peer_name, action, conn_type, session_id, ip }
  */
-router.post('/api/audit/conn', async (req, res) => {
+router.post('/api/audit/conn', requireAuditWriteAuth, async (req, res) => {
     try {
         const body = req.body || {};
 
@@ -1731,7 +1750,7 @@ router.get('/api/audit/conn', async (req, res) => {
  * Report a file transfer event.
  * Body: { host_id, host_uuid, peer_id, direction, path, is_file, num_files, files, ip, peer_name }
  */
-router.post('/api/audit/file', async (req, res) => {
+router.post('/api/audit/file', requireAuditWriteAuth, async (req, res) => {
     try {
         const body = req.body || {};
 
@@ -1795,7 +1814,7 @@ router.get('/api/audit/file', requireAuth, async (req, res) => {
  * Report a security alarm event.
  * Body: { alarm_type, alarm_name, host_id, peer_id, ip, details }
  */
-router.post('/api/audit/alarm', async (req, res) => {
+router.post('/api/audit/alarm', requireAuditWriteAuth, async (req, res) => {
     try {
         const body = req.body || {};
 

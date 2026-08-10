@@ -276,7 +276,7 @@ const logoUpload = multer({
     }),
     limits: { fileSize: 2 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
-        const allowed = /^image\/(png|jpeg|gif|webp|svg\+xml)$/;
+        const allowed = /^image\/(png|jpeg|gif|webp)$/;
         if (allowed.test(file.mimetype)) {
             cb(null, true);
         } else {
@@ -341,7 +341,7 @@ const bgUpload = multer({
     }),
     limits: { fileSize: 8 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
-        const allowed = /^image\/(png|jpeg|gif|webp|svg\+xml)$/;
+        const allowed = /^image\/(png|jpeg|gif|webp)$/;
         if (allowed.test(file.mimetype)) {
             cb(null, true);
         } else {

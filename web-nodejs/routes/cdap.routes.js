@@ -71,7 +71,7 @@ function unwrap(result) {
  * GET /api/cdap/status
  * Returns CDAP gateway status (enabled, connections, port)
  */
-router.get('/api/cdap/status', requireAuth, async (req, res) => {
+router.get('/api/cdap/status', requireAuth, requirePermission('cdap.view'), async (req, res) => {
     try {
         const result = await betterdeskApi.getCDAPStatus();
         res.json(unwrap(result));
@@ -84,7 +84,7 @@ router.get('/api/cdap/status', requireAuth, async (req, res) => {
  * GET /api/cdap/devices
  * Returns all connected CDAP devices
  */
-router.get('/api/cdap/devices', requireAuth, async (req, res) => {
+router.get('/api/cdap/devices', requireAuth, requirePermission('cdap.view'), async (req, res) => {
     try {
         const result = await betterdeskApi.getCDAPDevices();
         res.json(unwrap(result));
@@ -97,7 +97,7 @@ router.get('/api/cdap/devices', requireAuth, async (req, res) => {
  * GET /api/cdap/devices/:id
  * Returns full CDAP device info (manifest + state + connection)
  */
-router.get('/api/cdap/devices/:id', requireAuth, async (req, res) => {
+router.get('/api/cdap/devices/:id', requireAuth, requirePermission('cdap.view'), async (req, res) => {
     try {
         const result = await betterdeskApi.getCDAPDeviceInfo(req.params.id);
         res.json(unwrap(result));
@@ -110,7 +110,7 @@ router.get('/api/cdap/devices/:id', requireAuth, async (req, res) => {
  * GET /api/cdap/devices/:id/manifest
  * Returns device manifest (capabilities, widgets, alerts)
  */
-router.get('/api/cdap/devices/:id/manifest', requireAuth, async (req, res) => {
+router.get('/api/cdap/devices/:id/manifest', requireAuth, requirePermission('cdap.view'), async (req, res) => {
     try {
         const result = await betterdeskApi.getCDAPDeviceManifest(req.params.id);
         res.json(unwrap(result));
@@ -123,7 +123,7 @@ router.get('/api/cdap/devices/:id/manifest', requireAuth, async (req, res) => {
  * GET /api/cdap/devices/:id/state
  * Returns current widget values for connected device
  */
-router.get('/api/cdap/devices/:id/state', requireAuth, async (req, res) => {
+router.get('/api/cdap/devices/:id/state', requireAuth, requirePermission('cdap.view'), async (req, res) => {
     try {
         const result = await betterdeskApi.getCDAPDeviceState(req.params.id);
         res.json(unwrap(result));
@@ -139,6 +139,11 @@ router.get('/api/cdap/devices/:id/state', requireAuth, async (req, res) => {
  */
 router.post('/api/cdap/devices/:id/command', requireAuth, requirePermission('cdap.command'), async (req, res) => {
     try {
+        // Defense in depth: reject commands for unknown CDAP devices.
+        const device = await betterdeskApi.getCDAPDeviceInfo(req.params.id);
+        if (!device || (device.success === false && device.error)) {
+            return res.status(404).json({ error: 'CDAP device not found' });
+        }
         const { widget_id, action, value, reason } = req.body;
 
         if (!widget_id || !action) {
@@ -182,7 +187,7 @@ router.post('/api/cdap/toggle', requireAuth, requirePermission('server.config'),
  * Returns all currently firing CDAP alerts
  * Query: ?device_id=optional (filter by device)
  */
-router.get('/api/cdap/alerts', requireAuth, async (req, res) => {
+router.get('/api/cdap/alerts', requireAuth, requirePermission('cdap.view'), async (req, res) => {
     try {
         const result = await betterdeskApi.getCDAPAlerts(req.query.device_id);
         res.json(unwrap(result));
@@ -195,7 +200,7 @@ router.get('/api/cdap/alerts', requireAuth, async (req, res) => {
  * GET /api/cdap/devices/:id/linked
  * Returns all peers linked to this CDAP device
  */
-router.get('/api/cdap/devices/:id/linked', requireAuth, async (req, res) => {
+router.get('/api/cdap/devices/:id/linked', requireAuth, requirePermission('cdap.view'), async (req, res) => {
     try {
         const result = await betterdeskApi.getLinkedPeers(req.params.id);
         res.json(unwrap(result));
@@ -211,6 +216,11 @@ router.get('/api/cdap/devices/:id/linked', requireAuth, async (req, res) => {
  */
 router.post('/api/cdap/devices/:id/link', requireAuth, requirePermission('cdap.command'), async (req, res) => {
     try {
+        // Defense in depth: reject commands for unknown CDAP devices.
+        const device = await betterdeskApi.getCDAPDeviceInfo(req.params.id);
+        if (!device || (device.success === false && device.error)) {
+            return res.status(404).json({ error: 'CDAP device not found' });
+        }
         const { linked_peer_id } = req.body;
         if (linked_peer_id === undefined) {
             return res.status(400).json({ error: 'linked_peer_id is required' });

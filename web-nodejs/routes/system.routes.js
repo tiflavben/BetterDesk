@@ -30,7 +30,7 @@ function safeExec(cmd, timeout) {
 
 // ─── GET /api/system/info ─────────────────────────────────────────────────────
 
-router.get('/api/system/info', requireAuth, requirePermission('metrics.view'), (req, res) => {
+router.get('/api/system/info', requireAuth, requirePermission('server.config'), (req, res) => {
     try {
         const result = { processes: [], disks: [] };
 
@@ -110,7 +110,7 @@ router.get('/api/system/info', requireAuth, requirePermission('metrics.view'), (
 
 // ─── GET /api/logs/recent ─────────────────────────────────────────────────────
 
-router.get('/api/logs/recent', apiLimiter, requireAuth, requirePermission('metrics.view'), (req, res) => {
+router.get('/api/logs/recent', apiLimiter, requireAuth, requirePermission('server.config'), (req, res) => {
     try {
         const source = req.query.source || 'console';
         const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
@@ -224,7 +224,7 @@ router.get('/api/database/stats', apiLimiter, requireAuth, requirePermission('me
 
 // ─── GET /api/docker/containers ───────────────────────────────────────────────
 
-router.get('/api/docker/containers', requireAuth, requirePermission('metrics.view'), (req, res) => {
+router.get('/api/docker/containers', requireAuth, requirePermission('server.config'), (req, res) => {
     try {
         const raw = safeExec('docker ps -a --format "{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.Ports}}" 2>/dev/null', 10000);
         if (!raw) {
@@ -279,7 +279,7 @@ router.post('/api/system/exec', requireAuth, requirePermission('server.config'),
 
 // ─── GET /api/speed-test ──────────────────────────────────────────────────────
 
-router.get('/api/speed-test', requireAuth, requirePermission('metrics.view'), (req, res) => {
+router.get('/api/speed-test', requireAuth, requirePermission('server.config'), (req, res) => {
     const size = Math.min(parseInt(req.query.size, 10) || 1048576, 10485760); // max 10MB
     res.set({
         'Content-Type': 'application/octet-stream',

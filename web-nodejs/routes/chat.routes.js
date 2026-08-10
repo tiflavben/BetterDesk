@@ -11,7 +11,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requirePermission } = require('../middleware/auth');
 
 // File upload config — max 50MB, store in data/chat-files/
 const UPLOAD_DIR = path.join(__dirname, '..', 'data', 'chat-files');
@@ -63,7 +63,7 @@ router.post('/api/chat/upload', requireAuth, upload.single('file'), (req, res) =
 });
 
 // Download file
-router.get('/api/chat/files/:fileId', requireAuth, (req, res) => {
+router.get('/api/chat/files/:fileId', requireAuth, requirePermission('chat.access'), (req, res) => {
     const fileId = req.params.fileId.replace(/[^a-f0-9]/gi, '');
     if (!fileId) return res.status(400).json({ success: false, error: 'Invalid file ID' });
 

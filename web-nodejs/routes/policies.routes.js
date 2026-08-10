@@ -59,6 +59,26 @@ async function goApiProxy(req, res, method, path, body) {
     }
 }
 
+/**
+ * Defense in depth for device-scoped reads: fetch the device and reject the
+ * request if it falls outside the caller's device scope. Admins always pass
+ * (their scope is unrestricted); restricted roles are blocked before the
+ * Go proxy is reached.
+ */
+async function rejectIfDeviceOutOfScope(req, res, deviceId) {
+    try {
+        const serverBackend = require('../services/serverBackend');
+        const deviceGroupService = require('../services/deviceGroupService');
+        const db = require('../services/database');
+        const device = await serverBackend.getDeviceById(deviceId);
+        if (device && !(await deviceGroupService.userCanAccessDevice(db, req.session.user, device))) {
+            res.status(403).json({ error: 'Insufficient permissions' });
+            return true;
+        }
+    } catch (_) { /* unknown device: let the Go proxy decide */ }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 //  Page routes
 // ---------------------------------------------------------------------------
@@ -93,7 +113,7 @@ router.get('/attestation', requireAuth, requireAdmin, (req, res) => {
 // ---------------------------------------------------------------------------
 
 // Get all policies for organization
-router.get('/api/panel/policies/:orgId', requireAuth, (req, res) => {
+router.get('/api/panel/policies/:orgId', requireAuth, requireAdmin, (req, res) => {
     const orgId = assertSafeApiId(req.params.orgId, 'orgId');
     return goApiProxy(req, res, 'get', `/org/${encodeURIComponent(orgId)}/policy`);
 });
@@ -124,13 +144,14 @@ router.put('/api/panel/policies/:orgId/update', requireAdmin, (req, res) =>
     goApiProxy(req, res, 'put', orgPolicyPath(req, '/update'), req.body));
 
 // Get effective (merged) policy for a device
-router.get('/api/panel/policies/:orgId/effective/:deviceId', requireAuth, (req, res) => {
+router.get('/api/panel/policies/:orgId/effective/:deviceId', requireAuth, requireAdmin, async (req, res) => {
     const deviceId = assertSafeApiId(req.params.deviceId, 'deviceId');
+    if (await rejectIfDeviceOutOfScope(req, res, deviceId)) return;
     return goApiProxy(req, res, 'get', `${orgPolicyPath(req, '')}/effective/${encodeURIComponent(deviceId)}`);
 });
 
 // Policy audit log
-router.get('/api/panel/policies/:orgId/audit', requireAuth, (req, res) =>
+router.get('/api/panel/policies/:orgId/audit', requireAuth, requireAdmin, (req, res) =>
     goApiProxy(req, res, 'get', orgPolicyPath(req, '/audit')));
 
 // ---------------------------------------------------------------------------
@@ -180,13 +201,14 @@ router.get('/api/panel/attestation', requireAuth, requireAdmin, async (req, res)
 });
 
 // Get attestation for specific device
-router.get('/api/panel/attestation/:deviceId', requireAuth, async (req, res) => {
+router.get('/api/panel/attestation/:deviceId', requireAuth, requireAdmin, async (req, res) => {
     let deviceId;
     try {
         deviceId = assertSafeApiId(req.params.deviceId, 'deviceId');
     } catch (err) {
         return res.status(400).json({ error: err.message });
     }
+    if (await rejectIfDeviceOutOfScope(req, res, deviceId)) return;
     try {
         const resp = await apiClient({ method: 'get', url: `/attestation/${encodeURIComponent(deviceId)}` });
         res.json(resp.data);

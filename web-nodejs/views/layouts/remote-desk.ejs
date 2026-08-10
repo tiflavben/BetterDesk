@@ -24,12 +24,12 @@
     <script nonce="<%= cspNonce %>">
         window.BetterDesk = {
             lang: '<%= lang || "en" %>',
-            translations: <%- JSON.stringify(translations || {}) %>,
+            translations: <%- JSON.stringify(translations || {}).replace(/</g, '\\u003c') %>,
             cacheVersion: '<%= cacheVersion %>',
             csrfToken: '<%= typeof csrfToken !== "undefined" ? csrfToken : "" %>',
-            user: <%- JSON.stringify(user || null) %>,
-            branding: <%- JSON.stringify(branding || {}) %>,
-            availableLanguages: <%- JSON.stringify(availableLanguageList || []) %>
+            user: <%- JSON.stringify(user || null).replace(/</g, '\\u003c') %>,
+            branding: <%- JSON.stringify(branding || {}).replace(/</g, '\\u003c') %>,
+            availableLanguages: <%- JSON.stringify(availableLanguageList || []).replace(/</g, '\\u003c') %>
         };
     </script>
     <script src="/js/i18n-client.js?v=<%= cacheVersion %>"></script>
