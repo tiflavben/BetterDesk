@@ -105,8 +105,6 @@ func (pg *PostgresDB) Migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_peers_uuid ON peers(uuid)`,
 		`CREATE INDEX IF NOT EXISTS idx_peers_status ON peers(status)`,
-		`CREATE INDEX IF NOT EXISTS idx_peers_banned ON peers(banned) WHERE banned = TRUE`,
-		`CREATE INDEX IF NOT EXISTS idx_peers_soft_deleted ON peers(soft_deleted) WHERE soft_deleted = FALSE`,
 
 		`CREATE TABLE IF NOT EXISTS server_config (
 			key   TEXT PRIMARY KEY,
@@ -619,6 +617,32 @@ func (pg *PostgresDB) Migrate() error {
 			-- Column doesn't exist yet, skip index creation silently
 			NULL;
 		END $$`,
+		// banned index — check column exists before creating (legacy DBs)
+		`DO $$
+			BEGIN
+				IF EXISTS (
+					SELECT 1 FROM information_schema.columns
+					WHERE table_schema = current_schema() AND table_name = 'peers' AND column_name = 'banned'
+				) THEN
+					CREATE INDEX IF NOT EXISTS idx_peers_banned ON peers(banned) WHERE banned = TRUE;
+				END IF;
+			EXCEPTION WHEN undefined_column THEN
+				-- Column doesn't exist yet, skip index creation silently
+				NULL;
+			END $$`,
+		// soft_deleted index — check column exists before creating (legacy DBs)
+		`DO $$
+			BEGIN
+				IF EXISTS (
+					SELECT 1 FROM information_schema.columns
+					WHERE table_schema = current_schema() AND table_name = 'peers' AND column_name = 'soft_deleted'
+				) THEN
+					CREATE INDEX IF NOT EXISTS idx_peers_soft_deleted ON peers(soft_deleted) WHERE soft_deleted = FALSE;
+				END IF;
+			EXCEPTION WHEN undefined_column THEN
+				-- Column doesn't exist yet, skip index creation silently
+				NULL;
+			END $$`,
 	}
 	for _, idx := range deferredIndexes {
 		if _, err := pg.pool.Exec(pg.ctx, idx); err != nil {
@@ -776,8 +800,9 @@ func (pg *PostgresDB) UpsertPeer(p *Peer) error {
 
 	_, err := pg.pool.Exec(pg.ctx, `
 		INSERT INTO peers (id, uuid, pk, ip, "user", hostname, os, version,
-		                    status, nat_type, last_online, disabled, note, tags, heartbeat_seq)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		                    status, nat_type, last_online, disabled, note, tags, heartbeat_seq,
+		                    device_type, linked_peer_id, display_name)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT (id) DO UPDATE SET
 			uuid          = COALESCE(NULLIF(EXCLUDED.uuid, ''), peers.uuid),
 			pk            = COALESCE(EXCLUDED.pk, peers.pk),
@@ -792,12 +817,16 @@ func (pg *PostgresDB) UpsertPeer(p *Peer) error {
 			disabled      = EXCLUDED.disabled,
 			note          = COALESCE(NULLIF(EXCLUDED.note, ''), peers.note),
 			tags          = COALESCE(NULLIF(EXCLUDED.tags, ''), peers.tags),
-			heartbeat_seq = EXCLUDED.heartbeat_seq`,
+			heartbeat_seq = EXCLUDED.heartbeat_seq,
+			device_type   = COALESCE(NULLIF(EXCLUDED.device_type, ''), peers.device_type),
+			linked_peer_id = COALESCE(NULLIF(EXCLUDED.linked_peer_id, ''), peers.linked_peer_id),
+			display_name  = COALESCE(NULLIF(EXCLUDED.display_name, ''), peers.display_name)`,
 		/* SECURITY (GHSA-3v82-3gf8-fxx8): UpsertPeer MUST NOT silently clear
 		   soft_deleted/deleted_at on conflict. Restoration is now an explicit
 		   operation — see RestorePeer. */
 		p.ID, p.UUID, p.PK, p.IP, p.User, p.Hostname, p.OS, p.Version,
 		p.Status, p.NATType, lastOnline, p.Disabled, p.Note, p.Tags, p.HeartbeatSeq,
+		p.DeviceType, p.LinkedPeerID, p.DisplayName,
 	)
 	if err != nil {
 		return fmt.Errorf("db: UpsertPeer(%q): %w", p.ID, err)
@@ -1870,9 +1899,10 @@ func (pg *PostgresDB) GetChatGroup(id string) (*ChatGroup, error) {
 }
 
 func (pg *PostgresDB) ListChatGroups(memberID string) ([]*ChatGroup, error) {
-	pattern := "%" + memberID + "%"
+	escaped := strings.NewReplacer("%", "\\%", "_", "\\_").Replace(memberID)
+	pattern := "%" + escaped + "%"
 	rows, err := pg.pool.Query(pg.ctx,
-		`SELECT id, name, members, created_by, created_at FROM chat_groups WHERE members LIKE $1`, pattern)
+		`SELECT id, name, members, created_by, created_at FROM chat_groups WHERE members LIKE $1 ESCAPE '\'`, pattern)
 	if err != nil {
 		return nil, err
 	}

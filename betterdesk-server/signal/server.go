@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,8 +25,8 @@ import (
 	"github.com/unitronix/betterdesk-server/db"
 	"github.com/unitronix/betterdesk-server/events"
 	"github.com/unitronix/betterdesk-server/peer"
-	pb "github.com/unitronix/betterdesk-server/proto"
 	"github.com/unitronix/betterdesk-server/policy"
+	pb "github.com/unitronix/betterdesk-server/proto"
 	"github.com/unitronix/betterdesk-server/ratelimit"
 	"github.com/unitronix/betterdesk-server/security"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -396,7 +397,14 @@ func (s *Server) serveUDP() {
 			continue
 		}
 
-		s.handleUDPMessage(msg, raddr)
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					log.Printf("[signal] panic in handleUDPMessage from %s: %v\n%s", raddr, rec, debug.Stack())
+				}
+			}()
+			s.handleUDPMessage(msg, raddr)
+		}()
 	}
 }
 

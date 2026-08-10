@@ -2247,10 +2247,11 @@ func (s *SQLiteDB) ListChatGroups(memberID string) ([]*ChatGroup, error) {
 	defer s.mu.RUnlock()
 
 	// Use LIKE with escaped wildcards for comma-separated member search
-	pattern := "%" + memberID + "%"
+	escaped := strings.NewReplacer("%", "\\%", "_", "\\_").Replace(memberID)
+	pattern := "%" + escaped + "%"
 	rows, err := s.db.Query(
 		`SELECT id, name, members, created_by, created_at FROM chat_groups
-		 WHERE members LIKE ?`, pattern,
+		 WHERE members LIKE ? ESCAPE '\'`, pattern,
 	)
 	if err != nil {
 		return nil, err

@@ -14,9 +14,11 @@ import (
 	"net/http"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/unitronix/betterdesk-server/audit"
@@ -38,6 +40,24 @@ import (
 	"github.com/coder/websocket"
 	"golang.org/x/crypto/bcrypt"
 )
+
+var httpPanicTotal atomic.Int64
+
+// recoverMiddleware recovers panics from the HTTP handler chain, logs them,
+// and returns 500 instead of crashing the process.
+func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				httpPanicTotal.Add(1)
+				log.Printf("[api] panic recovered (total=%d) %s %s: %v\n%s",
+					httpPanicTotal.Load(), r.Method, r.URL.Path, rec, debug.Stack())
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal error"})
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
 
 // peerIDRegexp validates RustDesk peer ID format: 6-16 alphanumeric chars, hyphens, underscores.
 // Mirrors the validation in signal/handler.go — must be kept in sync.
@@ -263,8 +283,8 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("POST /api/peers/{id}/change-id", s.requirePermission(auth.PermDeviceChangeID, s.handleChangePeerID))
 
 	// Detailed device status (enhanced in Phase 4)
-	mux.HandleFunc("GET /api/peers/status/summary", s.handleStatusSummary)
-	mux.HandleFunc("GET /api/peers/online", s.handleOnlinePeers)
+	mux.HandleFunc("GET /api/peers/status/summary", s.requirePermission(auth.PermDeviceView, s.handleStatusSummary))
+	mux.HandleFunc("GET /api/peers/online", s.requirePermission(auth.PermDeviceView, s.handleOnlinePeers))
 	mux.HandleFunc("GET /api/peers/{id}/status", s.handlePeerStatus)
 	mux.HandleFunc("GET /api/peers/{id}/metrics", s.handlePeerMetrics)
 	mux.HandleFunc("GET /api/peers/{id}/linked", s.handleLinkedPeers)
@@ -273,7 +293,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("PUT /api/peers/{id}/access-policy", s.requireRole(auth.RoleAdmin, s.handleSaveAccessPolicy))
 	mux.HandleFunc("DELETE /api/peers/{id}/access-policy", s.requireRole(auth.RoleAdmin, s.handleDeleteAccessPolicy))
 	mux.HandleFunc("POST /api/peers/{id}/session-grant", s.requireRole(auth.RoleOperator, s.handleIssueSupportSessionGrant))
-	mux.HandleFunc("GET /api/peers/{id}/policy", s.handleGetPeerPolicy)
+	mux.HandleFunc("GET /api/peers/{id}/policy", s.requirePermission(auth.PermDeviceView, s.handleGetPeerPolicy))
 
 	// Blocklist management
 	mux.HandleFunc("GET /api/blocklist", s.requirePermission(auth.PermBlocklistEdit, s.handleListBlocklist))
@@ -608,7 +628,7 @@ func (s *Server) Start(ctx context.Context) error {
 	addr := fmt.Sprintf(":%d", s.cfg.APIPort)
 	s.httpSrv = &http.Server{
 		Addr:        addr,
-		Handler:     s.authMiddleware(mux),
+		Handler:     s.recoverMiddleware(s.authMiddleware(mux)),
 		ReadTimeout: 10 * time.Second,
 		// No WriteTimeout — WebSocket connections need unlimited write time.
 		// Individual REST handlers are responsible for their own deadlines.

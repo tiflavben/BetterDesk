@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -332,6 +333,12 @@ func (s *Server) serveTCP() {
 // Relay is a "dumb pipe" — no NaCl secure TCP on relay port.
 // E2E encryption is between RustDesk clients at the application layer.
 func (s *Server) handleConn(conn net.Conn) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Printf("[relay] panic in handleConn from %s: %v\n%s", conn.RemoteAddr(), rec, debug.Stack())
+		}
+	}()
+
 	// Per-IP connection limit
 	if s.connLimiter != nil {
 		ip, _, _ := net.SplitHostPort(conn.RemoteAddr().String())

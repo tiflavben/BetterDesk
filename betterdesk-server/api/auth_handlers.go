@@ -1138,8 +1138,8 @@ func (s *Server) authenticateRequest(r *http.Request) (username, role string, ok
 					return "", "", false
 				}
 			}
-			// Update last_used in background
-			go func() { _ = s.db.TouchAPIKey(k.ID) }()
+			// Update last_used
+			_ = s.db.TouchAPIKey(k.ID)
 			return "apikey:" + k.Name, k.Role, true
 		}
 	}

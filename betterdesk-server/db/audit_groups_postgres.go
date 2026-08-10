@@ -23,7 +23,7 @@ func (pg *PostgresDB) InsertAuditConnection(a *AuditConnection) error {
 
 // ListAuditConnections returns connection audit records matching the filter.
 func (pg *PostgresDB) ListAuditConnections(f AuditFilter) ([]*AuditConnection, error) {
-	q := `SELECT id, host_id, host_uuid, peer_id, peer_name, action, conn_type, session_id, ip, created_at::text
+	q := `SELECT id, host_id, host_uuid, peer_id, peer_name, action, conn_type, session_id, ip, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
 	      FROM audit_connections WHERE 1=1`
 	var args []any
 	i := 1
@@ -103,7 +103,7 @@ func (pg *PostgresDB) InsertAuditFile(a *AuditFile) error {
 
 // ListAuditFiles returns file-transfer audit records matching the filter.
 func (pg *PostgresDB) ListAuditFiles(f AuditFilter) ([]*AuditFile, error) {
-	q := `SELECT id, host_id, host_uuid, peer_id, direction, path, is_file, num_files, files_json, ip, peer_name, created_at::text
+	q := `SELECT id, host_id, host_uuid, peer_id, direction, path, is_file, num_files, files_json, ip, peer_name, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
 	      FROM audit_files WHERE 1=1`
 	var args []any
 	i := 1
@@ -173,7 +173,7 @@ func (pg *PostgresDB) InsertAuditAlarm(a *AuditAlarm) error {
 
 // ListAuditAlarms returns alarm audit records matching the filter.
 func (pg *PostgresDB) ListAuditAlarms(f AuditFilter) ([]*AuditAlarm, error) {
-	q := `SELECT id, alarm_type, alarm_name, host_id, peer_id, ip, details, created_at::text
+	q := `SELECT id, alarm_type, alarm_name, host_id, peer_id, ip, details, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
 	      FROM audit_alarms WHERE 1=1`
 	var args []any
 	i := 1

@@ -148,7 +148,7 @@ func (s *Server) handleListOrgs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Data scoping: non-admin users only see orgs they belong to
-	if userRole != auth.RoleAdmin {
+	if !auth.IsSuperAdminRole(userRole) && userRole != auth.RoleGlobalAdmin {
 		var filtered []*db.Organization
 		for _, org := range orgs {
 			member, err := s.db.GetOrgUserByUsername(org.ID, username)
@@ -990,6 +990,9 @@ func (s *Server) handleGetPeerPolicy(w http.ResponseWriter, r *http.Request) {
 	deviceID := r.PathValue("id")
 	if deviceID == "" {
 		http.Error(w, `{"error":"device id required"}`, http.StatusBadRequest)
+		return
+	}
+	if !s.peerOrgScopeCheck(w, r, deviceID) {
 		return
 	}
 

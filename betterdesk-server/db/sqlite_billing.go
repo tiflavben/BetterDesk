@@ -180,6 +180,9 @@ func (s *SQLiteDB) GetActiveBillingOrgContract(orgID string) (*BillingOrgContrac
 	return s.GetActiveBillingContract(BillingTargetOrg, orgID)
 }
 
+// NOTE: SQLite main DB has no folders table (folders live only in PG and in the
+// panel auth.db via ConsoleAuthDB), so 'folder' targets fall through to ELSE.
+// Postgres resolves folder names via pgBillingContractTargetNameSQL.
 const billingContractTargetNameSQL = `
 	COALESCE(
 		CASE c.target_type

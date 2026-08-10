@@ -111,14 +111,16 @@ func EnsureRelayHeartbeatTable(db *sql.DB) error {
 		}
 		return false
 	}
-	for _, col := range []struct{ name, typ string }{
-		{"cpu_percent", "REAL"}, {"mem_percent", "REAL"}, {"bandwidth_mbps", "REAL"},
-	} {
-		if have(col.name) {
+	for _, col := range []string{"cpu_percent", "mem_percent", "bandwidth_mbps"} {
+		if have(col) {
 			continue
 		}
-		if _, err := db.Exec("ALTER TABLE relay_heartbeat ADD COLUMN " + col.name + " " + col.typ + " NOT NULL DEFAULT 0"); err != nil {
-			return fmt.Errorf("db: relay heartbeat add column %s: %w", col.name, err)
+		colType := "REAL"
+		if pg {
+			colType = "DOUBLE PRECISION"
+		}
+		if _, err := db.Exec("ALTER TABLE relay_heartbeat ADD COLUMN " + col + " " + colType + " NOT NULL DEFAULT 0"); err != nil {
+			return fmt.Errorf("db: relay heartbeat add column %s: %w", col, err)
 		}
 	}
 	return nil
@@ -161,7 +163,12 @@ func GetAllRelayHeartbeats(db *sql.DB) (map[string]RelayHeartbeat, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db: nil database for relay heartbeat read")
 	}
-	rows, err := db.Query(`SELECT node_id, addr, active_sessions, total_bytes, cpu_percent, mem_percent, bandwidth_mbps, last_seen FROM relay_heartbeat`)
+	q := `SELECT node_id, addr, active_sessions, total_bytes, cpu_percent, mem_percent, bandwidth_mbps, last_seen FROM relay_heartbeat`
+	if isPostgresDriver(db) {
+		// Format timestamptz text as UTC without microseconds to match SQLite output.
+		q = `SELECT node_id, addr, active_sessions, total_bytes, cpu_percent, mem_percent, bandwidth_mbps, to_char(last_seen::timestamptz AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') FROM relay_heartbeat`
+	}
+	rows, err := db.Query(q)
 	if err != nil {
 		return nil, err
 	}
