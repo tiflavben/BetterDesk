@@ -7,22 +7,23 @@
  *
  * Endpoints:
  *
- * Device-facing (authenticated via token / X-Device-Id):
- *   POST   /api/bd/activity      — Upload activity sessions + idle info
+ * Device-facing (authenticated via token / X-Device-Id) — mounted under /api/bd:
+ *   POST   /activity      — Upload activity sessions + idle info
  *
- * Admin-facing (web console session):
- *   GET    /api/activity          — List all activity summaries
- *   GET    /api/activity/:id      — Per-device activity detail
- *   GET    /api/activity/:id/top  — Top apps for a device
+ * Admin-facing (web console session) — mounted under /api/activity:
+ *   GET    /              — List all activity summaries
+ *   GET    /:id           — Per-device activity detail
+ *   GET    /:id/top       — Top apps for a device
  *
  * @author UNITRONIX
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 'use strict';
 
 const express = require('express');
-const router = express.Router();
+const deviceRouter = express.Router();
+const adminRouter = express.Router();
 const db = require('../services/database');
 const { getAdapter } = require('../services/dbAdapter');
 
@@ -76,7 +77,7 @@ async function identifyDevice(req, res, next) {
  *   timestamp: string (ISO 8601)
  * }
  */
-router.post('/activity', identifyDevice, async (req, res) => {
+deviceRouter.post('/activity', identifyDevice, async (req, res) => {
     try {
         const { device_id, sessions, idle_seconds, timestamp } = req.body;
 
@@ -131,7 +132,7 @@ router.post('/activity', identifyDevice, async (req, res) => {
  * GET /api/activity — List all activity summaries.
  * Query params: from, to (ISO 8601 date strings)
  */
-router.get('/', requireAuth, requirePermission('audit.view'), async (req, res) => {
+adminRouter.get('/', requireAuth, requirePermission('audit.view'), async (req, res) => {
     try {
         const adapter = getAdapter();
         const { from, to } = req.query;
@@ -171,7 +172,7 @@ router.get('/', requireAuth, requirePermission('audit.view'), async (req, res) =
  * GET /api/activity/:id — Per-device activity detail.
  * Query params: from, to, limit
  */
-router.get('/:id', requireAuth, requirePermission('audit.view'), async (req, res) => {
+adminRouter.get('/:id', requireAuth, requirePermission('audit.view'), async (req, res) => {
     try {
         const adapter = getAdapter();
         const deviceId = req.params.id;
@@ -213,7 +214,7 @@ router.get('/:id', requireAuth, requirePermission('audit.view'), async (req, res
  * GET /api/activity/:id/top — Top applications for a device.
  * Query params: from, to, limit (default 10)
  */
-router.get('/:id/top', requireAuth, requirePermission('audit.view'), async (req, res) => {
+adminRouter.get('/:id/top', requireAuth, requirePermission('audit.view'), async (req, res) => {
     try {
         const adapter = getAdapter();
         const deviceId = req.params.id;
@@ -232,4 +233,4 @@ router.get('/:id/top', requireAuth, requirePermission('audit.view'), async (req,
     }
 });
 
-module.exports = router;
+module.exports = { device: deviceRouter, admin: adminRouter };

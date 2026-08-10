@@ -35,6 +35,38 @@ const router = express.Router();
 const { apiClient } = require('../services/betterdeskApi');
 const { assertSafeApiId } = require('../lib/goApiPath');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const db = require('../services/database');
+
+function extractBearerToken(req) {
+    const auth = req.headers['authorization'];
+    if (!auth || !auth.startsWith('Bearer ')) return null;
+    return auth.substring(7).trim();
+}
+
+/**
+ * Identify the reporting device: valid Bearer access token (sets req.deviceId
+ * from the token's client_id) or X-Device-Id header fallback. 401 if neither.
+ */
+async function identifyDevice(req, res, next) {
+    const token = extractBearerToken(req);
+    if (token) {
+        try {
+            const tokenRow = await db.getAccessToken(token);
+            if (tokenRow) {
+                req.deviceId = tokenRow.client_id || null;
+                req.deviceToken = tokenRow;
+                await db.touchAccessToken(token);
+                return next();
+            }
+        } catch (_) {}
+    }
+    const deviceId = req.headers['x-device-id'];
+    if (deviceId && /^[A-Za-z0-9_-]{3,64}$/.test(deviceId)) {
+        req.deviceId = deviceId;
+        return next();
+    }
+    return res.status(401).json({ error: 'Missing device identification' });
+}
 
 // ---------------------------------------------------------------------------
 //  Helper: proxy to Go server
@@ -158,7 +190,7 @@ router.get('/api/panel/policies/:orgId/audit', requireAuth, requireAdmin, (req, 
 //  Device-facing: agent fetches its policy
 // ---------------------------------------------------------------------------
 
-router.get('/api/bd/device-policy', async (req, res) => {
+router.get('/api/bd/device-policy', identifyDevice, async (req, res) => {
     const rawDeviceId = req.query.device_id || req.headers['x-device-id'];
     if (!rawDeviceId) {
         return res.status(400).json({ error: 'device_id required' });
@@ -222,7 +254,7 @@ router.get('/api/panel/attestation/:deviceId', requireAuth, requireAdmin, async 
 });
 
 // Device reports attestation data
-router.post('/api/bd/attestation', async (req, res) => {
+router.post('/api/bd/attestation', identifyDevice, async (req, res) => {
     const { device_id, fingerprint, platform_data } = req.body;
     if (!device_id || !fingerprint) {
         return res.status(400).json({ error: 'device_id and fingerprint required' });

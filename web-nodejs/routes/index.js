@@ -34,9 +34,9 @@ function lazyRoute(modulePath) {
 }
 
 // Lazy-loaded route modules (loaded on first request)
-const inventoryRoutes = lazyRoute('./inventory.routes');
+const inventoryRoutes = require('./inventory.routes');
 const ticketsRoutes = lazyRoute('./tickets.routes');
-const activityRoutes = lazyRoute('./activity.routes');
+const activityRoutes = require('./activity.routes');
 const automationRoutes = lazyRoute('./automation.routes');
 const fileTransferRoutes = lazyRoute('./fileTransfer.routes');
 const networkRoutes = lazyRoute('./network.routes');
@@ -111,12 +111,12 @@ router.use('/', remoteRoutes);
 router.use('/', require('./guest.routes'));
 router.use('/api/i18n', i18nRoutes);
 // bdApiRoutes now mounted in server.js (before CSRF) for desktop client access
-router.use('/api/bd', inventoryRoutes);     // device-facing: /api/bd/inventory, /api/bd/telemetry
-router.use('/api/inventory', inventoryRoutes); // admin-facing: /api/inventory, /api/inventory/:id
+router.use('/api/bd', inventoryRoutes.device);     // device-facing: /api/bd/inventory, /api/bd/telemetry
+router.use('/api/inventory', inventoryRoutes.admin); // admin-facing: /api/inventory, /api/inventory/:id
 router.use('/api/tickets', ticketsRoutes);      // admin-facing: /api/tickets CRUD
 router.use('/api/tickets', ticketsRoutes);      // device-facing: /api/tickets/bd (agent creates tickets)
-router.use('/api/bd', activityRoutes);           // device-facing: /api/bd/activity
-router.use('/api/activity', activityRoutes);     // admin-facing: /api/activity
+router.use('/api/bd', activityRoutes.device);    // device-facing: /api/bd/activity
+router.use('/api/activity', activityRoutes.admin); // admin-facing: /api/activity
 router.use('/api/automation', automationRoutes); // admin-facing: /api/automation/*
 router.use('/api/bd', automationRoutes);         // device-facing: /api/bd/commands
 router.use('/api/files', fileTransferRoutes);    // admin-facing: /api/files/transfer(s)

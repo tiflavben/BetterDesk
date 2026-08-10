@@ -171,6 +171,28 @@ async function requireAuditWriteAuth(req, res, next) {
 }
 
 /**
+ * Require either a valid Bearer token (RustDesk client) or a panel session
+ * cookie with the audit.view permission before reading audit events.
+ */
+async function requireAuditReadAuth(req, res, next) {
+    const token = extractBearerToken(req);
+    if (token) {
+        const user = await authService.validateAccessToken(token);
+        if (!user) return res.status(401).json({ error: 'Invalid or expired token' });
+        req.authUser = user;
+        return next();
+    }
+    if (req.session && req.session.userId) {
+        const role = req.session.user && req.session.user.role;
+        if (!roleHasPermission(role, 'audit.view')) {
+            return res.status(403).json({ error: 'Permission denied: audit.view' });
+        }
+        return next();
+    }
+    return res.status(401).json({ error: 'Authorization required' });
+}
+
+/**
  * Middleware: require admin role
  */
 function requireAdmin(req, res, next) {
@@ -1717,7 +1739,11 @@ router.get('/api/audit/conn', async (req, res) => {
         if (!user) return res.status(401).json({ error: 'Invalid or expired token' });
         req.authUser = user;
     } else if (req.session && req.session.userId) {
-        // Session-based panel auth — allowed
+        // Session-based panel auth — require audit.view (viewer keeps read access)
+        const role = req.session.user && req.session.user.role;
+        if (!roleHasPermission(role, 'audit.view')) {
+            return res.status(403).json({ error: 'Permission denied: audit.view' });
+        }
     } else {
         return res.status(401).json({ error: 'Authorization required' });
     }
@@ -1785,7 +1811,7 @@ router.post('/api/audit/file', requireAuditWriteAuth, async (req, res) => {
  * GET /api/audit/file
  * Query file transfer audit events.
  */
-router.get('/api/audit/file', requireAuth, async (req, res) => {
+router.get('/api/audit/file', requireAuditReadAuth, async (req, res) => {
     try {
         const filters = {
             host_id: req.query.host_id || '',
@@ -1843,7 +1869,7 @@ router.post('/api/audit/alarm', requireAuditWriteAuth, async (req, res) => {
  * GET /api/audit/alarm
  * Query security alarm events.
  */
-router.get('/api/audit/alarm', requireAuth, async (req, res) => {
+router.get('/api/audit/alarm', requireAuditReadAuth, async (req, res) => {
     try {
         const filters = {
             alarm_type: req.query.alarm_type !== undefined ? parseInt(req.query.alarm_type, 10) : undefined,

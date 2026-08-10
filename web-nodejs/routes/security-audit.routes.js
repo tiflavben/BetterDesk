@@ -35,7 +35,7 @@ router.get('/security-audit', requireAuth, requireAdmin, (req, res) => {
 });
 
 // ── API: Security overview ───────────────────────────────────
-router.get('/api/panel/security-audit/overview', requireAuth, requirePermission('audit.view'), async (req, res) => {
+router.get('/api/panel/security-audit/overview', requireAuth, requireAdmin, async (req, res) => {
   try {
     const [healthRes, keysRes, auditRes] = await Promise.allSettled([
       apiClient ? apiClient.get('/health') : Promise.reject('no api'),
@@ -94,7 +94,7 @@ router.get('/api/panel/security-audit/overview', requireAuth, requirePermission(
 });
 
 // ── API: Audit events ────────────────────────────────────────
-router.get('/api/panel/security-audit/events', requireAuth, requirePermission('audit.view'), (req, res) => {
+router.get('/api/panel/security-audit/events', requireAuth, requireAdmin, (req, res) => {
   const limit = parseInt(req.query.limit) || 50;
   const offset = parseInt(req.query.offset) || 0;
   const action = req.query.action || '';
@@ -104,7 +104,7 @@ router.get('/api/panel/security-audit/events', requireAuth, requirePermission('a
 });
 
 // ── API: Hardening checklist ─────────────────────────────────
-router.get('/api/panel/security-audit/hardening', requireAuth, requirePermission('audit.view'), async (req, res) => {
+router.get('/api/panel/security-audit/hardening', requireAuth, requireAdmin, async (req, res) => {
   try {
     const priorities = [
       { id: 'mutual_tls', name: 'Mutual TLS Console ↔ Go Server', category: 'network', severity: 'high', implemented: false, description: 'Replace plain HTTP localhost with mutual TLS authentication between web console and Go server.' },
@@ -125,7 +125,7 @@ router.get('/api/panel/security-audit/hardening', requireAuth, requirePermission
 });
 
 // ── API: Vulnerability scan results ──────────────────────────
-router.get('/api/panel/security-audit/vulnerabilities', requireAuth, requirePermission('audit.view'), async (req, res) => {
+router.get('/api/panel/security-audit/vulnerabilities', requireAuth, requireAdmin, async (req, res) => {
   try {
     const deps = {
       go: { total: 0, vulnerable: 0, items: [] },

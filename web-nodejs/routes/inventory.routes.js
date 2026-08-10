@@ -6,11 +6,13 @@
  * database via dbAdapter (SQLite or PostgreSQL).
  *
  * Endpoints:
- *   POST   /api/bd/inventory   — Full inventory upload (HW + SW)
- *   POST   /api/bd/telemetry   — Lightweight telemetry (CPU/RAM)
- *   GET    /api/bd/inventory/:id — Get last inventory for a device
- *   GET    /api/inventory       — Admin endpoint: list all device inventories
- *   GET    /api/inventory/:id   — Admin endpoint: single device inventory
+ *   Device-facing under /api/bd:
+ *     POST   /inventory       — Full inventory upload (HW + SW)
+ *     POST   /telemetry       — Lightweight telemetry (CPU/RAM)
+ *     GET    /inventory/:id   — Get last inventory for a device
+ *   Admin-facing under /api/inventory:
+ *     GET    /                — List all device inventories
+ *     GET    /:id             — Single device inventory
  *
  * @author UNITRONIX
  * @version 2.0.0
@@ -19,7 +21,8 @@
 'use strict';
 
 const express = require('express');
-const router = express.Router();
+const deviceRouter = express.Router();
+const adminRouter = express.Router();
 const db = require('../services/database');
 const { getAdapter } = require('../services/dbAdapter');
 const betterdeskApi = require('../services/betterdeskApi');
@@ -105,7 +108,7 @@ function parsePagination(req) {
  *
  * Body: { device_id, hardware: {...}, software: {...}, collected_at }
  */
-router.post('/inventory', requireDeviceToken, async (req, res) => {
+deviceRouter.post('/inventory', requireDeviceToken, async (req, res) => {
     try {
         const { device_id, hardware, software, collected_at } = req.body;
 
@@ -155,7 +158,7 @@ router.post('/inventory', requireDeviceToken, async (req, res) => {
  *
  * Body: { device_id, cpu_usage_percent, memory_used_bytes, memory_total_bytes, uptime_secs, timestamp }
  */
-router.post('/telemetry', requireDeviceToken, async (req, res) => {
+deviceRouter.post('/telemetry', requireDeviceToken, async (req, res) => {
     try {
         const {
             device_id,
@@ -192,7 +195,7 @@ router.post('/telemetry', requireDeviceToken, async (req, res) => {
  * GET /api/bd/inventory/:id — Get last inventory for a specific device.
  * Accessible by the device itself (via token) or by admin.
  */
-router.get('/inventory/:id', requireDeviceToken, async (req, res) => {
+deviceRouter.get('/inventory/:id', requireDeviceToken, async (req, res) => {
     try {
         const deviceId = req.params.id;
         if (!requireTokenDeviceMatch(req, res, deviceId)) return;
@@ -217,7 +220,7 @@ router.get('/inventory/:id', requireDeviceToken, async (req, res) => {
 /**
  * GET /api/inventory — List all device inventories (admin only).
  */
-router.get('/', requireAuth, requirePermission('device.view'), async (req, res) => {
+adminRouter.get('/', requireAuth, requirePermission('device.view'), async (req, res) => {
     try {
         const pagination = parsePagination(req);
         if (!pagination) {
@@ -299,7 +302,7 @@ router.get('/', requireAuth, requirePermission('device.view'), async (req, res) 
 /**
  * GET /api/inventory/:id — Full inventory detail for one device (admin only).
  */
-router.get('/:id', requireAuth, requirePermission('device.view'), async (req, res) => {
+adminRouter.get('/:id', requireAuth, requirePermission('device.view'), async (req, res) => {
     try {
         const deviceId = req.params.id;
         const adapter = getAdapter();
@@ -320,4 +323,4 @@ router.get('/:id', requireAuth, requirePermission('device.view'), async (req, re
     }
 });
 
-module.exports = router;
+module.exports = { device: deviceRouter, admin: adminRouter };

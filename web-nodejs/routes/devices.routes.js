@@ -427,7 +427,7 @@ router.patch('/api/devices/:id', requireAuth, requirePermission('device.edit'), 
  * DELETE /api/devices/:id - Delete device (soft delete)
  * Query params: revoke=true (blocklist + disconnect), cascade=true (delete linked devices)
  */
-router.delete('/api/devices/:id', requireAuth, requirePermission('device.delete'), async (req, res) => {
+router.delete('/api/devices/:id', requireAuth, async (req, res) => {
     try {
         const id = req.params.id;
         const revoke = req.query.revoke === 'true';
@@ -488,7 +488,7 @@ router.delete('/api/devices/:id', requireAuth, requirePermission('device.delete'
 /**
  * POST /api/devices/:id/restore - Restore a soft-deleted device
  */
-router.post('/api/devices/:id/restore', requireAuth, requirePermission('device.delete'), async (req, res) => {
+router.post('/api/devices/:id/restore', requireAuth, async (req, res) => {
     try {
         const id = req.params.id;
         const device = await serverBackend.getDeviceById(id, { includeDeleted: true });
@@ -518,7 +518,7 @@ router.post('/api/devices/:id/restore', requireAuth, requirePermission('device.d
 /**
  * POST /api/devices/:id/ban - Ban device
  */
-router.post('/api/devices/:id/ban', requireAuth, requirePermission('device.ban'), async (req, res) => {
+router.post('/api/devices/:id/ban', requireAuth, async (req, res) => {
     try {
         const id = req.params.id;
         const { reason } = req.body;
@@ -550,7 +550,7 @@ router.post('/api/devices/:id/ban', requireAuth, requirePermission('device.ban')
 /**
  * POST /api/devices/:id/unban - Unban device
  */
-router.post('/api/devices/:id/unban', requireAuth, requirePermission('device.ban'), async (req, res) => {
+router.post('/api/devices/:id/unban', requireAuth, async (req, res) => {
     try {
         const id = req.params.id;
         

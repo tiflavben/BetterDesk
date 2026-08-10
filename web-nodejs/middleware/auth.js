@@ -22,6 +22,8 @@ const DEFAULT_ROLE_PERMISSIONS = {
         'user.view',
         'device.view',
         'audit.view', 'metrics.view',
+        'cdap.view',
+        'chat.access',
         'enrollment.manage',
     ]),
 

@@ -37,7 +37,7 @@ describe('Inventory Routes', () => {
 
     it('rejects an unauthenticated device inventory read', async () => {
         const app = createTestApp();
-        app.use('/api/bd', inventoryRoutes);
+        app.use('/api/bd', inventoryRoutes.device);
 
         const res = await request(app).get('/api/bd/inventory/device-a');
 
@@ -48,7 +48,7 @@ describe('Inventory Routes', () => {
 
     it('rejects an X-Device-Id-only inventory read', async () => {
         const app = createTestApp();
-        app.use('/api/bd', inventoryRoutes);
+        app.use('/api/bd', inventoryRoutes.device);
 
         const res = await request(app)
             .get('/api/bd/inventory/device-a')
@@ -63,7 +63,7 @@ describe('Inventory Routes', () => {
         mockDb.getAccessToken.mockResolvedValue({ client_id: 'device-b' });
 
         const app = createTestApp();
-        app.use('/api/bd', inventoryRoutes);
+        app.use('/api/bd', inventoryRoutes.device);
 
         const res = await request(app)
             .get('/api/bd/inventory/device-a')
@@ -92,7 +92,7 @@ describe('Inventory Routes', () => {
 
         const app = createTestApp();
         withAuth(app, { id: 1, username: 'global-admin', role: 'global_admin' });
-        app.use('/api/inventory', inventoryRoutes);
+        app.use('/api/inventory', inventoryRoutes.admin);
 
         const res = await request(app).get('/api/inventory?page=1&limit=1');
 
@@ -113,7 +113,7 @@ describe('Inventory Routes', () => {
 
         const app = createTestApp();
         withAuth(app, { id: 1, username: 'global-admin', role: 'global_admin' });
-        app.use('/api/inventory', inventoryRoutes);
+        app.use('/api/inventory', inventoryRoutes.admin);
 
         const res = await request(app).get('/api/inventory?page=1&limit=1000000');
 

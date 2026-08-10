@@ -160,7 +160,7 @@ router.get('/api/logs/recent', apiLimiter, requireAuth, requirePermission('serve
 
 // ─── GET /api/database/stats ──────────────────────────────────────────────────
 
-router.get('/api/database/stats', apiLimiter, requireAuth, requirePermission('metrics.view'), async (req, res) => {
+router.get('/api/database/stats', apiLimiter, requireAuth, requirePermission('server.config'), async (req, res) => {
     try {
         const db = require('../services/dbAdapter');
         const config = require('../config/config');
