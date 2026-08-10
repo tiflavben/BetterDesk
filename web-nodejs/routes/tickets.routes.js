@@ -94,7 +94,7 @@ function requireAdminOrOperator(req, res, next) {
         return res.status(401).json({ error: 'Authentication required' });
     }
     const role = req.session.user.role;
-    if (role === 'admin' || role === 'operator') {
+    if (isFullTicketAccessRole(role)) {
         return next();
     }
     return res.status(403).json({ error: 'Insufficient permissions' });

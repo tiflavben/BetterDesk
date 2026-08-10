@@ -54,6 +54,26 @@
         el.innerHTML = '<div class="tool-spinner"><span class="material-icons">autorenew</span> ' + t('common.loading', 'Loading…') + '</div>';
     }
 
+    /**
+     * Client-side permission gate (mirror of middleware/auth.js role map for the
+     * server.* permission class). The server still enforces the authoritative
+     * check on every /api endpoint; this only hides/gates UI blocks.
+     */
+    function hasPermission(perm) {
+        var user = window.BetterDesk && window.BetterDesk.user;
+        var role = user && user.role;
+        if (!role) return false;
+        if (role === 'super_admin' || role === 'admin') return true;
+        if (perm === 'server.config') return role === 'server_admin';
+        return false;
+    }
+
+    function requireServerConfig(el) {
+        if (hasPermission('server.config')) return true;
+        if (el) showError(el, t('toolkit.perm_denied', 'You do not have permission to use this tool'));
+        return false;
+    }
+
     function showError(el, msg) {
         el.innerHTML = '<div class="tool-result-box"><span class="result-status error"><span class="material-icons" style="font-size:16px">error</span> ' + esc(msg) + '</span></div>';
     }
@@ -284,6 +304,7 @@
 
     document.getElementById('speed-run').addEventListener('click', function () {
         var el = document.getElementById('speed-result');
+        if (!requireServerConfig(el)) return;
         showSpinner(el);
 
         var start = performance.now();
@@ -459,6 +480,7 @@
 
     document.getElementById('proc-run').addEventListener('click', function () {
         var el = document.getElementById('proc-result');
+        if (!requireServerConfig(el)) return;
         showSpinner(el);
 
         apiGet('/api/system/info').then(function (res) {
@@ -482,6 +504,7 @@
 
     document.getElementById('disk-run').addEventListener('click', function () {
         var el = document.getElementById('disk-result');
+        if (!requireServerConfig(el)) return;
         showSpinner(el);
 
         apiGet('/api/system/info').then(function (res) {
@@ -506,6 +529,7 @@
 
     document.getElementById('db-run').addEventListener('click', function () {
         var el = document.getElementById('db-result');
+        if (!requireServerConfig(el)) return;
         showSpinner(el);
 
         apiGet('/api/database/stats').then(function (res) {
@@ -532,6 +556,7 @@
 
     document.getElementById('docker-run').addEventListener('click', function () {
         var el = document.getElementById('docker-result');
+        if (!requireServerConfig(el)) return;
         showSpinner(el);
 
         apiGet('/api/docker/containers').then(function (res) {
@@ -559,6 +584,7 @@
         var source = document.getElementById('log-source').value;
         var lines = parseInt(document.getElementById('log-lines').value, 10) || 50;
         var el = document.getElementById('log-result');
+        if (!requireServerConfig(el)) return;
         showSpinner(el);
 
         apiGet('/api/logs/recent?source=' + encodeURIComponent(source) + '&lines=' + lines).then(function (res) {
@@ -578,5 +604,16 @@
             el.innerHTML = html;
         }).catch(function (e) { showError(el, e.message); });
     });
+
+    // Hide server-config-gated tool cards for roles without server.config
+    function hideRestrictedTools() {
+        if (hasPermission('server.config')) return;
+        ['tool-speed', 'tool-processes', 'tool-disk', 'tool-db', 'tool-docker', 'tool-logs']
+            .forEach(function (id) {
+                var card = document.getElementById(id);
+                if (card) card.style.display = 'none';
+            });
+    }
+    hideRestrictedTools();
 
 })();

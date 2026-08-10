@@ -28,6 +28,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const { enforceOrigin } = require('../middleware/wsOrigin');
 
 let pty = null;
 try {
@@ -239,6 +240,8 @@ function initServerTerminalProxy(server, sessionMiddleware, opts) {
         server,
         (pathname) => pathname === '/ws/server-management/terminal',
         (req, socket, head) => {
+            // CSWSH protection: reject cross-origin upgrades before touching session
+            if (!enforceOrigin(req, socket, 'server-management/terminal')) return;
             sessionMiddleware(req, {}, () => {
                 if (!req.session || !req.session.userId) {
                     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');

@@ -76,7 +76,10 @@ router.get('/api/cdap/status', requireAuth, requirePermission('cdap.view'), asyn
         const result = await betterdeskApi.getCDAPStatus();
         res.json(unwrap(result));
     } catch (err) {
-        res.status(500).json({ enabled: false, error: 'Failed to get CDAP status' });
+        const status = err.response?.status || 500;
+        const error = (err.response && err.response.data && (err.response.data.error || err.response.data.message))
+            || err.message || 'Failed to get CDAP status';
+        res.status(status).json({ enabled: false, error });
     }
 });
 
@@ -89,7 +92,10 @@ router.get('/api/cdap/devices', requireAuth, requirePermission('cdap.view'), asy
         const result = await betterdeskApi.getCDAPDevices();
         res.json(unwrap(result));
     } catch (err) {
-        res.status(500).json({ devices: [], error: 'Failed to list CDAP devices' });
+        const status = err.response?.status || 500;
+        const error = (err.response && err.response.data && (err.response.data.error || err.response.data.message))
+            || err.message || 'Failed to list CDAP devices';
+        res.status(status).json({ devices: [], error });
     }
 });
 

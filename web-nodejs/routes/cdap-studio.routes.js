@@ -132,7 +132,7 @@ router.put('/api/cdap-studio/flows/:id', requireAuth, requireRole('operator'), a
 
         // Only creator or admin can edit
         const user = req.session.user;
-        if (user.role !== 'admin' && existing.created_by !== user.username) {
+        if (!isSuperAdminRole(user.role) && existing.created_by !== user.username) {
             return res.status(403).json({ success: false, error: 'Not authorized' });
         }
 

@@ -12,6 +12,7 @@
 
 const WebSocket = require('ws');
 const db = require('./database');
+const { enforceOrigin } = require('../middleware/wsOrigin');
 
 const log = {
     info:  (...a) => console.log('[DeviceStatus]', ...a),
@@ -41,6 +42,8 @@ function initDeviceStatusPush(httpServer, sessionMiddleware, goApiUrl, apiKey) {
         httpServer,
         (pathname) => pathname === '/ws/device-status',
         (req, socket, head) => {
+            // CSWSH protection: reject cross-origin upgrades before touching session
+            if (!enforceOrigin(req, socket, 'device-status')) return;
             // Authenticate via session
             sessionMiddleware(req, {}, () => {
                 if (!req.session || !req.session.userId) {
