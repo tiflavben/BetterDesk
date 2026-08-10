@@ -1048,6 +1048,16 @@
         const tab = document.getElementById('tab-branding');
         if (!tab) return;
 
+        // Branding is an admin feature: non-admin users must not see the
+        // panel at all (server-side removes the tab; this is a JS backstop).
+        const canView = window.BetterDesk?.user
+            ? ['admin', 'super_admin', 'server_admin', 'global_admin'].includes(window.BetterDesk.user.role)
+            : true;
+        if (!canView) {
+            tab.remove();
+            return;
+        }
+
         _canBrandingEdit = tab.dataset.canBrandingEdit !== '0';
 
         try {

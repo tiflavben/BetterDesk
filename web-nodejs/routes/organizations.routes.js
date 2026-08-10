@@ -35,7 +35,7 @@ const express = require('express');
 const router = express.Router();
 const { apiClient } = require('../services/betterdeskApi');
 const { assertSafeApiId } = require('../lib/goApiPath');
-const { requireAuth, requirePermission } = require('../middleware/auth');
+const { requireAuth, requirePermission, requireAdmin } = require('../middleware/auth');
 const userSync = require('../services/userSync');
 const db = require('../services/database');
 const serverBackend = require('../services/serverBackend');
@@ -96,7 +96,7 @@ async function resolveGoMemberId(userId) {
 //  Page routes
 // ---------------------------------------------------------------------------
 
-router.get('/organizations', requireAuth, (req, res) => {
+router.get('/organizations', requireAuth, requireAdmin, (req, res) => {
     res.render('organizations', {
         title: 'Organizations',
         user: req.session.user,

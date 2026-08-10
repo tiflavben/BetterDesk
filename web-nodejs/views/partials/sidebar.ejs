@@ -25,15 +25,19 @@
                     data-category="main" title="<%= _('nav.main') %>">
                 <span class="material-icons">home</span>
             </button>
+            <% if (isAdminUser) { %>
             <button class="sidebar-rail-btn <%= ['inventory','tickets','help-requests','automation','network','activity','cdap','fleet','scaling','cross-platform','chat'].includes(currentPage) ? 'active' : '' %>"
                     data-category="management" title="<%= _('nav.management') || 'Management' %>">
                 <span class="material-icons">business_center</span>
             </button>
+            <% } %>
+            <% if (isAdminUser) { %>
             <button class="sidebar-rail-btn <%= ['reports','keys','generator','remote','toolkit','cdap-studio'].includes(currentPage) ? 'active' : '' %>"
                     data-category="tools" title="<%= _('nav.tools') %>">
                 <span class="material-icons">build</span>
             </button>
-            <% if (isSuperAdmin || hasPermission('server.config') || hasPermission('user.view') || hasPermission('enrollment.manage') || hasPermission('enrollment.approve') || hasPermission('audit.view')) { %>
+            <% } %>
+            <% if (isSuperAdmin || hasPermission('server.config') || hasPermission('user.view') || hasPermission('enrollment.manage') || hasPermission('enrollment.approve')) { %>
             <button class="sidebar-rail-btn <%= ['tokens','organizations','policies','attestation','dataguard','users','security-audit','permissions','languages','resource-control'].includes(currentPage) ? 'active' : '' %>"
                     data-category="system" title="<%= _('nav.system') %>">
                 <span class="material-icons">admin_panel_settings</span>

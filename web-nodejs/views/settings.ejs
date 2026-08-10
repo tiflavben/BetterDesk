@@ -16,10 +16,10 @@
                     <span class="material-icons" aria-hidden="true">tune</span>
                     ${_('settings.tab_general')}
                 </button>
-                <button type="button" class="settings-shell-tab settings-tab" role="tab" aria-selected="false" id="settings-tab-branding" data-tab="branding" aria-controls="tab-branding">
+                ${isAdminUser ? `<button type="button" class="settings-shell-tab settings-tab" role="tab" aria-selected="false" id="settings-tab-branding" data-tab="branding" aria-controls="tab-branding">
                     <span class="material-icons" aria-hidden="true">palette</span>
                     ${_('settings.tab_branding')}
-                </button>
+                </button>` : ''}
                 ${canServerConfig ? `<button type="button" class="settings-shell-tab settings-tab" role="tab" aria-selected="false" id="settings-tab-auth" data-tab="auth" aria-controls="tab-auth">
                     <span class="material-icons" aria-hidden="true">admin_panel_settings</span>
                     ${_('settings.tab_auth')}
@@ -358,7 +358,8 @@
                 </div>
             </div>
             
-            <!-- Audit Log Section -->
+            <!-- Audit Log Section (admin-class only: global audit trail) -->
+            ${isAdminUser ? `
             <div class="settings-panel">
                 <div class="settings-panel-header">
                     <h2 class="settings-panel-title">
@@ -389,6 +390,7 @@
                     </div>
                 </div>
             </div>
+            ` : ''}
             
         </div>
         </div>

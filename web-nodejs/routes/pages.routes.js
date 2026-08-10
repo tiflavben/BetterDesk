@@ -10,11 +10,13 @@
 
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requirePermission, requireRole } = require('../middleware/auth');
+const { requireAuth, requirePermission, requireRole, requireAdmin } = require('../middleware/auth');
 
 // ── Inventory ──
+// Admin-class management pages: non-admin roles (viewer/operator/pro) are
+// scoped to self-service UI (dashboard/devices/settings) only.
 
-router.get('/inventory', requireAuth, (req, res) => {
+router.get('/inventory', requireAuth, requireAdmin, (req, res) => {
     res.render('inventory', {
         title: req.t('inventory.title'),
         activePage: 'inventory',
@@ -23,7 +25,7 @@ router.get('/inventory', requireAuth, (req, res) => {
 
 // ── Tickets (Helpdesk) ──
 
-router.get('/tickets', requireAuth, (req, res) => {
+router.get('/tickets', requireAuth, requireAdmin, (req, res) => {
     res.render('tickets', {
         title: req.t('tickets.title'),
         activePage: 'tickets',
@@ -32,7 +34,7 @@ router.get('/tickets', requireAuth, (req, res) => {
 
 // ── Automation (Alerts + Remote Commands) ──
 
-router.get('/automation', requireAuth, (req, res) => {
+router.get('/automation', requireAuth, requireAdmin, (req, res) => {
     res.render('automation', {
         title: req.t('automation.title'),
         activePage: 'automation',
@@ -41,7 +43,7 @@ router.get('/automation', requireAuth, (req, res) => {
 
 // ── Network Monitoring ──
 
-router.get('/network', requireAuth, (req, res) => {
+router.get('/network', requireAuth, requireAdmin, (req, res) => {
     res.render('network', {
         title: req.t('network.title'),
         activePage: 'network',
@@ -50,7 +52,7 @@ router.get('/network', requireAuth, (req, res) => {
 
 // ── Activity Monitoring ──
 
-router.get('/activity', requireAuth, (req, res) => {
+router.get('/activity', requireAuth, requireAdmin, (req, res) => {
     res.render('activity', {
         title: req.t('activity.title'),
         activePage: 'activity',
@@ -59,7 +61,7 @@ router.get('/activity', requireAuth, (req, res) => {
 
 // ── Reports ──
 
-router.get('/reports', requireAuth, (req, res) => {
+router.get('/reports', requireAuth, requireAdmin, (req, res) => {
     res.render('reports', {
         title: req.t('reports.title'),
         activePage: 'reports',

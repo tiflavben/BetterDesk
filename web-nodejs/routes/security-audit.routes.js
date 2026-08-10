@@ -2,7 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requirePermission } = require('../middleware/auth');
+const { requireAuth, requirePermission, requireAdmin } = require('../middleware/auth');
 
 let apiClient;
 try { apiClient = require('../services/betterdeskApi'); } catch (e) { apiClient = null; }
@@ -22,7 +22,7 @@ function goApiProxy(req, res, method, path, body) {
 }
 
 // ── Page ─────────────────────────────────────────────────────
-router.get('/security-audit', requireAuth, requirePermission('audit.view'), (req, res) => {
+router.get('/security-audit', requireAuth, requireAdmin, (req, res) => {
   const tab = req.query.tab || 'overview';
   res.render('security-audit', {
     title: req.t('security_audit.title'),

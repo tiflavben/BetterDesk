@@ -58,6 +58,7 @@
                             </div>
                         </article>
 
+                        ${isAdminUser ? `
                         <article class="dashboard-stat-card">
                             <div class="dashboard-stat-icon banned">
                                 <span class="material-icons">block</span>
@@ -69,6 +70,7 @@
                                 <div class="dashboard-stat-label">${_('dashboard.banned')}</div>
                             </div>
                         </article>
+                        ` : ''}
 
                         <article class="dashboard-stat-card">
                             <div class="dashboard-stat-icon offline">
@@ -172,6 +174,7 @@
                         </div>
                     </section>
 
+                    ${isAdminUser ? `
                     <section class="server-status-section">
                         <div class="section-header">
                             <h2 class="section-title">
@@ -259,6 +262,7 @@
                             </article>
                         </div>
                     </section>
+                    ` : ''}
 
                     <section class="quick-actions-section">
                         <div class="section-header">

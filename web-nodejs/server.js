@@ -222,6 +222,11 @@ app.use((req, res, next) => {
     const role = req.session?.user?.role;
     res.locals.hasPermission = (perm) => role ? roleHasPermission(role, perm) : false;
     res.locals.isSuperAdmin = role ? isSuperAdminRole(role) : false;
+    // Admin-class user: full management UI (menus, dashboard admin cards).
+    // Non-admin roles (viewer/operator/pro) get a scoped, self-service UI.
+    res.locals.isAdminUser = role
+        ? (isSuperAdminRole(role) || role === 'server_admin' || role === 'global_admin' || role === 'admin')
+        : false;
     // Prevent HTML page caching — only static assets should be cached
     if (!req.path.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|map|proto)$/)) {
         res.set('Cache-Control', 'no-cache, no-store, must-revalidate');

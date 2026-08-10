@@ -7,7 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const { assertSafeApiId } = require('../lib/goApiPath');
-const { requireAuth, requirePermission } = require('../middleware/auth');
+const { requireAuth, requirePermission, requireAdmin } = require('../middleware/auth');
 const betterdeskApi = require('../services/betterdeskApi');
 
 // ── Page Routes ──────────────────────────────────────────────────────────
@@ -16,7 +16,7 @@ const betterdeskApi = require('../services/betterdeskApi');
  * CDAP devices list page
  * GET /cdap
  */
-router.get('/cdap', requireAuth, (req, res) => {
+router.get('/cdap', requireAuth, requireAdmin, (req, res) => {
     res.render('cdap-devices', {
         title: req.t('cdap.devices_title'),
         activePage: 'cdap',
@@ -28,7 +28,7 @@ router.get('/cdap', requireAuth, (req, res) => {
  * CDAP devices list page (alternative path, used by desktop embed)
  * GET /cdap/devices
  */
-router.get('/cdap/devices', requireAuth, (req, res) => {
+router.get('/cdap/devices', requireAuth, requireAdmin, (req, res) => {
     res.render('cdap-devices', {
         title: req.t('cdap.devices_title'),
         activePage: 'cdap',
@@ -40,7 +40,7 @@ router.get('/cdap/devices', requireAuth, (req, res) => {
  * CDAP device detail page with widget panel
  * GET /cdap/devices/:id
  */
-router.get('/cdap/devices/:id', requireAuth, (req, res) => {
+router.get('/cdap/devices/:id', requireAuth, requireAdmin, (req, res) => {
     try {
         const deviceId = assertSafeApiId(req.params.id, 'deviceId');
         res.render('cdap-device', {
