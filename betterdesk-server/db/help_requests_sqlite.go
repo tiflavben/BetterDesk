@@ -152,3 +152,47 @@ func (s *SQLiteDB) GetDeviceOrgID(deviceID string) (string, error) {
 	}
 	return orgID, nil
 }
+
+// GetDeviceUserID returns the owning username of a device (peers.user),
+// or "" when the peer is not registered / has no owner. Used to resolve
+// user-scoped billing contracts.
+func (s *SQLiteDB) GetDeviceUserID(deviceID string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var user string
+	err := s.db.QueryRow(
+		`SELECT "user" FROM peers WHERE id = ? LIMIT 1`, deviceID,
+	).Scan(&user)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return user, nil
+}
+
+// CountOnlinePeersByUser counts ONLINE peers owned by a username.
+func (s *SQLiteDB) CountOnlinePeersByUser(username string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM peers WHERE "user" = ? AND status = 'ONLINE' AND (soft_deleted IS NULL OR soft_deleted = false)`,
+		username,
+	).Scan(&n)
+	return n, err
+}
+
+// CountOnlinePeersByOrg counts ONLINE peers belonging to an organization.
+func (s *SQLiteDB) CountOnlinePeersByOrg(orgID string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM org_devices od JOIN peers p ON p.id = od.device_id WHERE od.org_id = ? AND p.status = 'ONLINE' AND (p.soft_deleted IS NULL OR p.soft_deleted = false)`,
+		orgID,
+	).Scan(&n)
+	return n, err
+}

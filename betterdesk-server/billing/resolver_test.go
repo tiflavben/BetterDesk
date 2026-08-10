@@ -10,6 +10,7 @@ import (
 type mockResolver struct {
 	byTarget map[string]*db.BillingContract
 	orgID    string
+	userID   string
 }
 
 func (m *mockResolver) GetActiveBillingContract(targetType, targetKey string) (*db.BillingContract, error) {
@@ -21,6 +22,10 @@ func (m *mockResolver) GetActiveBillingContract(targetType, targetKey string) (*
 
 func (m *mockResolver) GetDeviceOrgID(deviceID string) (string, error) {
 	return m.orgID, nil
+}
+
+func (m *mockResolver) GetDeviceUserID(deviceID string) (string, error) {
+	return m.userID, nil
 }
 
 type mockPanel struct {
@@ -80,6 +85,45 @@ func TestResolveContractForDevicePriority(t *testing.T) {
 	got, err = ResolveContractForDevice(resolver, panel, "dev1")
 	if err != nil || got == nil || got.ID != "c-org" {
 		t.Fatalf("want org contract, got %#v err=%v", got, err)
+	}
+}
+
+// TestResolveContractForDeviceUserTier — user-scoped contract (device owner)
+// must be picked between device-group and org tiers.
+func TestResolveContractForDeviceUserTier(t *testing.T) {
+	userContract := &db.BillingContract{ID: "c-user", TargetType: db.BillingTargetUser}
+	orgContract := &db.BillingContract{ID: "c-org2", TargetType: db.BillingTargetOrg}
+
+	resolver := &mockResolver{
+		orgID:  "org-1",
+		userID: "user-42",
+		byTarget: map[string]*db.BillingContract{
+			"user:user-42": userContract,
+			"org:org-1":    orgContract,
+		},
+	}
+	panel := &mockPanel{}
+
+	got, err := ResolveContractForDevice(resolver, panel, "dev1")
+	if err != nil {
+		t.Fatalf("ResolveContractForDevice: %v", err)
+	}
+	if got == nil || got.ID != "c-user" {
+		t.Fatalf("want user contract, got %#v", got)
+	}
+
+	// No user contract -> falls through to org.
+	resolver.byTarget["user:user-42"] = nil
+	got, err = ResolveContractForDevice(resolver, panel, "dev1")
+	if err != nil || got == nil || got.ID != "c-org2" {
+		t.Fatalf("want org fallback, got %#v err=%v", got, err)
+	}
+
+	// No owner -> org directly.
+	resolver.userID = ""
+	got, err = ResolveContractForDevice(resolver, panel, "dev1")
+	if err != nil || got == nil || got.ID != "c-org2" {
+		t.Fatalf("want org fallback (no owner), got %#v err=%v", got, err)
 	}
 }
 

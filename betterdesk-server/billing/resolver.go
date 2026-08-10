@@ -11,6 +11,7 @@ import (
 type ContractResolver interface {
 	GetActiveBillingContract(targetType, targetKey string) (*db.BillingContract, error)
 	GetDeviceOrgID(deviceID string) (string, error)
+	GetDeviceUserID(deviceID string) (string, error)
 }
 
 // PanelContext supplies folder and device-group membership for resolution.
@@ -20,7 +21,7 @@ type PanelContext interface {
 }
 
 // ResolveContractForDevice picks the most specific active contract:
-// device > folder > device_group > org.
+// device > folder > device_group > user > org.
 func ResolveContractForDevice(resolver ContractResolver, panel PanelContext, deviceID string) (*db.BillingContract, error) {
 	if resolver == nil || deviceID == "" {
 		return nil, nil
@@ -61,6 +62,20 @@ func ResolveContractForDevice(resolver ContractResolver, panel PanelContext, dev
 	if err != nil {
 		return nil, err
 	}
+
+	// User-scoped contract: device owner (peers."user") may carry its own
+	// contract (traffic quota, expiry, device limit). Falls through to the
+	// org contract when the user has none.
+	if owner, err := resolver.GetDeviceUserID(deviceID); err != nil {
+		return nil, err
+	} else if owner != "" {
+		if c, err := resolver.GetActiveBillingContract(db.BillingTargetUser, owner); err != nil {
+			return nil, err
+		} else if c != nil {
+			return c, nil
+		}
+	}
+
 	if orgID == "" {
 		return nil, nil
 	}

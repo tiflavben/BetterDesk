@@ -129,3 +129,40 @@ func (pg *PostgresDB) GetDeviceOrgID(deviceID string) (string, error) {
 	}
 	return orgID, nil
 }
+
+// GetDeviceUserID returns the owning username of a device (peers."user"),
+// or "" when the peer is not registered / has no owner. Used to resolve
+// user-scoped billing contracts.
+func (pg *PostgresDB) GetDeviceUserID(deviceID string) (string, error) {
+	var user string
+	err := pg.pool.QueryRow(pg.ctx,
+		`SELECT "user" FROM peers WHERE id = $1 LIMIT 1`, deviceID,
+	).Scan(&user)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return user, nil
+}
+
+// CountOnlinePeersByUser counts ONLINE peers owned by a username.
+func (pg *PostgresDB) CountOnlinePeersByUser(username string) (int, error) {
+	var n int
+	err := pg.pool.QueryRow(pg.ctx,
+		`SELECT COUNT(*) FROM peers WHERE "user" = $1 AND status = 'ONLINE' AND (soft_deleted IS NULL OR soft_deleted = false)`,
+		username,
+	).Scan(&n)
+	return n, err
+}
+
+// CountOnlinePeersByOrg counts ONLINE peers belonging to an organization.
+func (pg *PostgresDB) CountOnlinePeersByOrg(orgID string) (int, error) {
+	var n int
+	err := pg.pool.QueryRow(pg.ctx,
+		`SELECT COUNT(*) FROM org_devices od JOIN peers p ON p.id = od.device_id WHERE od.org_id = $1 AND p.status = 'ONLINE' AND (p.soft_deleted IS NULL OR p.soft_deleted = false)`,
+		orgID,
+	).Scan(&n)
+	return n, err
+}

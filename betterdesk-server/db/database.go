@@ -566,6 +566,9 @@ type Database interface {
 	UpdateHelpRequestStatus(id int64, status, handledBy string) error
 	PruneHelpRequests(maxAge time.Duration) (int64, error) // Delete requests older than maxAge
 	GetDeviceOrgID(deviceID string) (string, error)        // "" if device has no org
+	GetDeviceUserID(deviceID string) (string, error)       // "" if device has no owner
+	CountOnlinePeersByUser(username string) (int, error)   // ONLINE peers owned by a username
+	CountOnlinePeersByOrg(orgID string) (int, error)       // ONLINE peers in an org
 
 	// Organizations
 	CreateOrganization(o *Organization) error

@@ -258,6 +258,23 @@ func (s *Service) CheckConnection(deviceID string) ConnectionCheckResult {
 	if contract.QuotaBytes > 0 && contract.UsedBytes >= contract.QuotaBytes {
 		return ConnectionCheckResult{Allowed: false, Reason: "traffic_quota_exceeded", OrgID: orgID, HasBilling: true}
 	}
+	// Device-limit enforcement: a positive DeviceLimit caps how many
+	// devices owned by the contract target (user or org) may be online
+	// at once. The target key is the owner name/org id used in billing.
+	if contract.DeviceLimit > 0 && contract.TargetKey != "" {
+		var online int
+		var err error
+		if contract.TargetType == db.BillingTargetUser {
+			online, err = s.db.CountOnlinePeersByUser(contract.TargetKey)
+		} else if contract.TargetType == db.BillingTargetOrg {
+			online, err = s.db.CountOnlinePeersByOrg(contract.TargetKey)
+		}
+		if err != nil {
+			log.Printf("[billing] device-limit count for %q: %v", contract.TargetKey, err)
+		} else if online >= contract.DeviceLimit {
+			return ConnectionCheckResult{Allowed: false, Reason: "device_limit_reached", OrgID: orgID, HasBilling: true}
+		}
+	}
 	return ConnectionCheckResult{Allowed: true, OrgID: orgID, HasBilling: true}
 }
 
