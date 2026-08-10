@@ -798,18 +798,13 @@
                             body: contractPatch
                         });
                     } else {
-                        // Create a user-scoped contract; reuse any package id.
-                        let pkgId = '';
-                        try {
-                            const pkgs = await Utils.api('/api/billing/packages');
-                            pkgId = (pkgs.packages && pkgs.packages[0]?.id) || '';
-                        } catch { /* no packages */ }
+                        // Create a user-scoped contract; the server auto-resolves
+                        // (or auto-creates) a default package, so no package lookup needed.
                         await Utils.api('/api/billing/contracts', {
                             method: 'POST',
                             body: Object.assign({
                                 target_type: 'user',
                                 target_key: username,
-                                package_id: pkgId,
                                 status: 'active'
                             }, contractPatch)
                         });

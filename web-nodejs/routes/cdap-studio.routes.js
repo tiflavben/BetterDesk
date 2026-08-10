@@ -74,6 +74,7 @@ router.get('/api/cdap-studio/flows', requireAuth, async (req, res) => {
 /**
  * GET /api/cdap-studio/flows/:id
  * Get a single flow with full JSON.
+ * Non-admin users may only read their own flows (ownership check).
  */
 router.get('/api/cdap-studio/flows/:id', requireAuth, async (req, res) => {
     try {
@@ -82,6 +83,10 @@ router.get('/api/cdap-studio/flows/:id', requireAuth, async (req, res) => {
             [req.params.id]
         );
         if (!row) return res.status(404).json({ success: false, error: 'Flow not found' });
+        const user = req.session.user;
+        if (!isSuperAdminRole(user.role) && row.created_by !== user.username) {
+            return res.status(403).json({ success: false, error: 'Not authorized' });
+        }
         res.json({ success: true, flow: row });
     } catch (err) {
         res.status(500).json({ success: false, error: 'Failed to get flow' });
@@ -162,7 +167,7 @@ router.delete('/api/cdap-studio/flows/:id', requireAuth, requireRole('operator')
         if (!existing) return res.status(404).json({ success: false, error: 'Flow not found' });
 
         const user = req.session.user;
-        if (user.role !== 'admin' && existing.created_by !== user.username) {
+        if (!isSuperAdminRole(user.role) && existing.created_by !== user.username) {
             return res.status(403).json({ success: false, error: 'Not authorized' });
         }
 
@@ -181,6 +186,10 @@ router.post('/api/cdap-studio/flows/:id/deploy', requireAuth, requireRole('opera
     try {
         const row = await db.get('SELECT * FROM studio_flows WHERE id = ?', [req.params.id]);
         if (!row) return res.status(404).json({ success: false, error: 'Flow not found' });
+        const user = req.session.user;
+        if (!isSuperAdminRole(user.role) && row.created_by !== user.username) {
+            return res.status(403).json({ success: false, error: 'Not authorized' });
+        }
 
         // Mark as deployed in local DB
         await db.run(
@@ -202,6 +211,10 @@ router.post('/api/cdap-studio/flows/:id/test', requireAuth, requireRole('operato
     try {
         const row = await db.get('SELECT * FROM studio_flows WHERE id = ?', [req.params.id]);
         if (!row) return res.status(404).json({ success: false, error: 'Flow not found' });
+        const user = req.session.user;
+        if (!isSuperAdminRole(user.role) && row.created_by !== user.username) {
+            return res.status(403).json({ success: false, error: 'Not authorized' });
+        }
 
         let flowData;
         try {
@@ -239,6 +252,10 @@ router.get('/api/cdap-studio/flows/:id/export', requireAuth, async (req, res) =>
     try {
         const row = await db.get('SELECT * FROM studio_flows WHERE id = ?', [req.params.id]);
         if (!row) return res.status(404).json({ success: false, error: 'Flow not found' });
+        const user = req.session.user;
+        if (!isSuperAdminRole(user.role) && row.created_by !== user.username) {
+            return res.status(403).json({ success: false, error: 'Not authorized' });
+        }
 
         const exportData = {
             version: '1.0',

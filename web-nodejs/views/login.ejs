@@ -198,9 +198,9 @@
         window.BetterDesk = {
             csrfToken: '<%= csrfToken || "" %>',
             lang: '<%= lang || "en" %>',
-            availableLanguages: <%- JSON.stringify(availableLanguageList || []) %>,
-            translations: <%- JSON.stringify(translations || {}) %>,
-            branding: <%- JSON.stringify(branding || {}) %>
+            availableLanguages: <%- JSON.stringify(availableLanguageList || []).replace(/</g, '\\u003c') %>,
+            translations: <%- JSON.stringify(translations || {}).replace(/</g, '\\u003c') %>,
+            branding: <%- JSON.stringify(branding || {}).replace(/</g, '\\u003c') %>
         };
     </script>
     <script src="/js/utils.js?v=<%= cacheVersion %>"></script>

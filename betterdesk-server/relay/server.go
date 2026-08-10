@@ -159,7 +159,7 @@ func (s *Server) SetTrafficSink(sink TrafficSink) {
 }
 
 // SetHeartbeatDB enables periodic liveness reporting to the shared store
-// (relay-only nodes): every 10s the node upserts its active-session count and
+// (relay-only nodes): every 5s the node upserts its active-session count and
 // cumulative relayed bytes so the console can show per-node telemetry.
 // nodeID is the node's stable identity (e.g. "192.168.1.102:21117").
 func (s *Server) SetHeartbeatDB(db *sql.DB, nodeID string) {
@@ -223,7 +223,12 @@ func readCPUStat() cpuStat {
 }
 
 // cpuPercent computes the utilization between two samples (0..100).
+// Guards against counter wraparound (e.g. /proc/stat being re-read after
+// a host reboot) which would otherwise underflow to a huge delta.
 func cpuPercent(prev, cur cpuStat) float64 {
+	if cur.total < prev.total || cur.idle < prev.idle {
+		return 0
+	}
 	dt := cur.total - prev.total
 	if dt == 0 {
 		return 0

@@ -39,7 +39,7 @@ function requireSession(req, res, next) {
 
 function requireAdmin(req, res, next) {
     const role = req.session && req.session.user && req.session.user.role;
-    if (isSuperAdminRole(role) || role === 'global_admin') return next();
+    if (isSuperAdminRole(role) || role === 'global_admin' || role === 'server_admin') return next();
     return res.status(403).json({ error: 'Admin access required' });
 }
 
@@ -62,7 +62,7 @@ router.get('/types', requireSession, (_req, res) => {
  * POST /api/reports/generate
  * Body: { type, from?, to?, device_id?, limit? }
  */
-router.post('/generate', requireSession, async (req, res) => {
+router.post('/generate', requireAdmin, async (req, res) => {
     try {
         const { type, from, to, device_id, limit } = req.body;
         if (!type) return res.status(400).json({ error: 'Report type is required' });
@@ -82,7 +82,7 @@ router.post('/generate', requireSession, async (req, res) => {
  * Body: { type, from?, to?, device_id?, limit?, section? }
  * section: key inside data to flatten for CSV (e.g. "targets", "top_applications")
  */
-router.post('/generate/csv', requireSession, async (req, res) => {
+router.post('/generate/csv', requireAdmin, async (req, res) => {
     try {
         const { type, from, to, device_id, limit, section } = req.body;
         if (!type) return res.status(400).json({ error: 'Report type is required' });
@@ -121,7 +121,7 @@ router.post('/generate/csv', requireSession, async (req, res) => {
 /**
  * GET /api/reports/saved
  */
-router.get('/saved', requireSession, async (req, res) => {
+router.get('/saved', requireAdmin, async (req, res) => {
     try {
         const db = getAdapter();
         const reports = await db.getSavedReports();
@@ -135,7 +135,7 @@ router.get('/saved', requireSession, async (req, res) => {
 /**
  * GET /api/reports/saved/:id
  */
-router.get('/saved/:id', requireSession, async (req, res) => {
+router.get('/saved/:id', requireAdmin, async (req, res) => {
     try {
         const db = getAdapter();
         const report = await db.getSavedReportById(Number(req.params.id));

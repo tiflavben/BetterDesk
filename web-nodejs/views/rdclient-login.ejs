@@ -119,11 +119,11 @@
         window.BetterDesk = {
             csrfToken: '<%= csrfToken || "" %>',
             lang: '<%= lang || "en" %>',
-            translations: <%- JSON.stringify(translations || {}) %>,
-            branding: <%- JSON.stringify(branding || {}) %>,
-            returnUrl: <%- JSON.stringify(typeof returnUrl !== 'undefined' ? returnUrl : '/remote') %>,
+            translations: <%- JSON.stringify(translations || {}).replace(/</g, '\\u003c') %>,
+            branding: <%- JSON.stringify(branding || {}).replace(/</g, '\\u003c') %>,
+            returnUrl: <%- JSON.stringify(typeof returnUrl !== 'undefined' ? returnUrl : '/remote').replace(/</g, '\\u003c') %>,
             sessionExpired: <%= sessionExpired ? 'true' : 'false' %>,
-            availableLanguages: <%- JSON.stringify(availableLanguageList || []) %>
+            availableLanguages: <%- JSON.stringify(availableLanguageList || []).replace(/</g, '\\u003c') %>
         };
     </script>
     <script src="/js/i18n-client.js?v=<%= cacheVersion %>"></script>

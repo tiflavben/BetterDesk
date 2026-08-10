@@ -7,10 +7,12 @@ const express = require('express');
 const router = express.Router();
 const db = require('../services/database');
 const logger = require('../lib/logger').child('REMOTE');
-const { requireRdClientAuth, rdClientGuestOnly, normalizeRdClientReturnUrl, roleHasPermission } = require('../middleware/auth');
+const { requireRdClientAuth, requireAuth, rdClientGuestOnly, normalizeRdClientReturnUrl, roleHasPermission } = require('../middleware/auth');
 const { rdClientPageLimiter } = require('../middleware/rateLimiter');
 const betterdeskApi = require('../services/betterdeskApi');
 const keyService = require('../services/keyService');
+const serverBackend = require('../services/serverBackend');
+const deviceGroupService = require('../services/deviceGroupService');
 const {
     getGuestToken,
     getGuestTokenFromQuery,
@@ -27,6 +29,19 @@ async function requireRemoteAccess(req, res, next) {
     const role = req.session && req.session.user && req.session.user.role;
     if (req.session && req.session.userId && role !== 'pro' && roleHasPermission(role, 'device.connect')) {
         return requireRdClientAuth('device.connect')(req, res, next);
+    }
+
+    // Self-service: a signed-in panel user (no device.connect permission)
+    // may open the remote viewer for devices within their own scope
+    // (owned devices / granted groups). This keeps the browser remote
+    // desktop usable for regular users without global device rights.
+    if (req.session && req.session.userId && req.session.user && deviceId) {
+        try {
+            const device = await serverBackend.getDeviceById(deviceId);
+            if (device && await deviceGroupService.userCanAccessDevice(db, req.session.user, device)) {
+                return next();
+            }
+        } catch (_) { /* fall through to standard auth */ }
     }
 
     const queryToken = getGuestTokenFromQuery(req);
@@ -162,7 +177,7 @@ router.get('/remote/guest', rdClientPageLimiter, async (req, res) => {
 /**
  * GET /remote - RdClient operator dashboard (device list + connect)
  */
-router.get('/remote', rdClientPageLimiter, requireRdClientAuth('device.connect'), (req, res) => {
+router.get('/remote', rdClientPageLimiter, requireAuth, (req, res) => {
     clearGuestCookie(res);
     res.render('remote-dashboard', {
         title: req.t('remote_dashboard.title'),

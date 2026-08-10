@@ -111,8 +111,8 @@
     'use strict';
 
     // ---- Config ----
-    const DEVICE_ID  = ${JSON.stringify(deviceId)};
-    const HOSTNAME   = ${JSON.stringify(device && device.hostname ? device.hostname : '')};
+    const DEVICE_ID  = ${JSON.stringify(deviceId).replace(/</g, '\\u003c')};
+    const HOSTNAME   = ${JSON.stringify(device && device.hostname ? device.hostname : '').replace(/</g, '\\u003c')};
     const WS_BASE    = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host;
     const REMOTE_URL = WS_BASE + '/ws/remote-viewer/' + encodeURIComponent(DEVICE_ID);
     const CHAT_URL   = WS_BASE + '/ws/chat-operator/' + encodeURIComponent(DEVICE_ID);

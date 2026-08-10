@@ -35,7 +35,7 @@ const express = require('express');
 const router = express.Router();
 const { apiClient } = require('../services/betterdeskApi');
 const { assertSafeApiId } = require('../lib/goApiPath');
-const { requireAuth, requirePermission, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requirePermission, requireAdmin, roleHasPermission } = require('../middleware/auth');
 const userSync = require('../services/userSync');
 const db = require('../services/database');
 const serverBackend = require('../services/serverBackend');
@@ -92,6 +92,25 @@ async function resolveGoMemberId(userId) {
     return resolved || userId;
 }
 
+/**
+ * Read guard for org data. The org pages themselves are requireAdmin, but
+ * fleet/policies/commercialization/users UIs (operator-grade roles) also
+ * consume org reads. Any role holding org management, user visibility or
+ * billing visibility may read org metadata; plain viewers get 403.
+ */
+function requireOrgRead(req, res, next) {
+    const role = req.session && req.session.user && req.session.user.role;
+    const canRead = roleHasPermission(role, 'org.create')
+        || roleHasPermission(role, 'org.edit')
+        || roleHasPermission(role, 'org.delete')
+        || roleHasPermission(role, 'org.manage_users')
+        || roleHasPermission(role, 'org.manage_devices')
+        || roleHasPermission(role, 'user.view')
+        || roleHasPermission(role, 'billing.view');
+    if (canRead) return next();
+    return res.status(403).json({ error: 'Insufficient permissions' });
+}
+
 // ---------------------------------------------------------------------------
 //  Page routes
 // ---------------------------------------------------------------------------
@@ -104,7 +123,7 @@ router.get('/organizations', requireAuth, requireAdmin, (req, res) => {
     });
 });
 
-router.get('/organizations/:id', requireAuth, (req, res) => {
+router.get('/organizations/:id', requireAuth, requireAdmin, (req, res) => {
     try {
         const orgId = assertSafeApiId(req.params.id, 'orgId');
         res.render('organization-detail', {
@@ -129,9 +148,9 @@ router.get('/organizations/:id', requireAuth, (req, res) => {
 // ---------------------------------------------------------------------------
 
 // Organizations CRUD
-router.get('/api/panel/org', requireAuth, (req, res) => goApiProxy(req, res, 'get', '/org'));
+router.get('/api/panel/org', requireAuth, requireOrgRead, (req, res) => goApiProxy(req, res, 'get', '/org'));
 router.post('/api/panel/org', requireAuth, requirePermission('org.create'), (req, res) => goApiProxy(req, res, 'post', '/org', req.body));
-router.get('/api/panel/org/:id', requireAuth, (req, res) =>
+router.get('/api/panel/org/:id', requireAuth, requireOrgRead, (req, res) =>
     goApiProxySafe(req, res, 'get', () => orgApiPath(req.params.id)));
 router.put('/api/panel/org/:id', requireAuth, requirePermission('org.edit'), (req, res) =>
     goApiProxySafe(req, res, 'put', () => orgApiPath(req.params.id), req.body));
@@ -139,7 +158,7 @@ router.delete('/api/panel/org/:id', requireAuth, requirePermission('org.delete')
     goApiProxySafe(req, res, 'delete', () => orgApiPath(req.params.id)));
 
 // Org Users
-router.get('/api/panel/org/:id/users', requireAuth, (req, res) =>
+router.get('/api/panel/org/:id/users', requireAuth, requireOrgRead, (req, res) =>
     goApiProxySafe(req, res, 'get', () => orgApiPath(req.params.id, '/users')));
 router.post('/api/panel/org/:id/users', requireAuth, requirePermission('org.manage_users'), (req, res) =>
     goApiProxySafe(req, res, 'post', () => orgApiPath(req.params.id, '/users'), req.body));
@@ -174,19 +193,19 @@ router.get('/api/panel/org/:id/invitations', requireAuth, requirePermission('org
 // Devices
 router.post('/api/panel/org/:id/devices', requireAuth, requirePermission('org.manage_devices'), (req, res) =>
     goApiProxySafe(req, res, 'post', () => orgApiPath(req.params.id, '/devices'), req.body));
-router.get('/api/panel/org/:id/devices', requireAuth, (req, res) =>
+router.get('/api/panel/org/:id/devices', requireAuth, requireOrgRead, (req, res) =>
     goApiProxySafe(req, res, 'get', () => orgApiPath(req.params.id, '/devices')));
 router.delete('/api/panel/org/:id/devices/:did', requireAuth, requirePermission('org.manage_devices'), (req, res) =>
     goApiProxySafe(req, res, 'delete', () => orgDeviceApiPath(req.params.id, req.params.did)));
 
 // Settings
-router.get('/api/panel/org/:id/settings', requireAuth, (req, res) =>
+router.get('/api/panel/org/:id/settings', requireAuth, requireOrgRead, (req, res) =>
     goApiProxySafe(req, res, 'get', () => orgApiPath(req.params.id, '/settings')));
 router.put('/api/panel/org/:id/settings', requireAuth, requirePermission('org.edit'), (req, res) =>
     goApiProxySafe(req, res, 'put', () => orgApiPath(req.params.id, '/settings'), req.body));
 
 // Shared organization address book (Issue #190)
-router.get('/api/panel/org/:id/address-book', requireAuth, (req, res) =>
+router.get('/api/panel/org/:id/address-book', requireAuth, requireOrgRead, (req, res) =>
     goApiProxySafe(req, res, 'get', () => orgApiPath(req.params.id, '/address-book')));
 router.put('/api/panel/org/:id/address-book', requireAuth, requirePermission('org.edit'), (req, res) =>
     goApiProxySafe(req, res, 'put', () => orgApiPath(req.params.id, '/address-book'), req.body));
@@ -195,7 +214,7 @@ router.put('/api/panel/org/:id/address-book', requireAuth, requirePermission('or
  * GET /api/panel/org/:id/device-groups
  * Device and user groups linked to this organization (team_id = org id).
  */
-router.get('/api/panel/org/:id/device-groups', requireAuth, async (req, res) => {
+router.get('/api/panel/org/:id/device-groups', requireAuth, requireOrgRead, async (req, res) => {
     try {
         const orgId = assertSafeApiId(req.params.id, 'orgId');
         const devices = await serverBackend.getAllDevices({});

@@ -667,7 +667,7 @@
             const qs = showDeleted ? '?includeDeleted=true' : '';
             const endpoint = '/api/devices' + qs;
             const response = await fetchOnce(endpoint, () => Utils.api(endpoint));
-            devices = response.devices || [];
+            devices = response.devices || response.data?.devices || [];
             
             // Update count
             document.getElementById('devices-count').textContent = devices.length;

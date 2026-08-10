@@ -561,7 +561,7 @@ router.get('/api/d/:publicId/download/:platform/:arch/:format', async (req, res)
 //  Legacy TOML config generator (deprecated, kept for compatibility)
 // =========================================================================
 
-router.get('/api/generator/config', requireAuth, async (req, res) => {
+router.get('/api/generator/config', requireAuth, requireAdmin, async (req, res) => {
     try {
         const publicKey = await keyService.resolvePublicKey();
         res.json({
@@ -578,7 +578,7 @@ router.get('/api/generator/config', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/api/generator/generate-config', requireAuth, async (req, res) => {
+router.post('/api/generator/generate-config', requireAuth, requireAdmin, async (req, res) => {
     try {
         const { serverHost, serverPort, relayHost, relayPort, clientName } = req.body;
         if (!serverHost) {

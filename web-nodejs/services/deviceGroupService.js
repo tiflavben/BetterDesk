@@ -220,11 +220,29 @@ async function getDeviceScopeForUser(db, user, devices = []) {
         }
     }
 
-    if (restrictedGroups.length === 0 && peerGrants.length === 0) {
-        return restrictedDefault ? new Set() : null;
+    // Owner devices: a user can always see (and manage) the devices they own
+    // (peers."user" == username, serialized as `username` by the Go API).
+    // Computed up-front so it also applies when there are no restricted groups
+    // or peer grants (e.g. a fully restricted default scope with no ACLs yet).
+    const ownerIds = new Set();
+    if (user && user.username) {
+        const ownerId = String(user.username);
+        for (const dev of devices || []) {
+            const devOwner = dev && (dev.username || dev.user);
+            if (devOwner && String(devOwner) === ownerId) {
+                ownerIds.add(String(dev.id));
+            }
+        }
     }
 
-    const allowedIds = new Set();
+    if (restrictedGroups.length === 0 && peerGrants.length === 0) {
+        // No restricted groups and no peer grants: under a restricted default
+        // scope the user still sees the devices they own; under an open
+        // default everything is visible.
+        return restrictedDefault ? ownerIds : null;
+    }
+
+    const allowedIds = new Set(ownerIds);
     const restrictedIds = new Set();
     for (const group of restrictedGroups) {
         const ids = await getGroupPeerIds(db, group, devices);

@@ -431,10 +431,10 @@
 
 <!-- Initial session data (from server route) -->
 <script nonce="${cspNonce}">
-    window.__initialDeviceId = ` + JSON.stringify(deviceId) + `;
-    window.__initialDeviceName = ` + JSON.stringify(device && device.hostname ? device.hostname : '') + `;
-    window.__capabilities = ` + JSON.stringify(capabilities || { transport: 'rd' }) + `;
-    window.__guestToken = ` + JSON.stringify((typeof guestToken !== 'undefined' && guestToken) ? guestToken : '') + `;
+    window.__initialDeviceId = ` + JSON.stringify(deviceId).replace(/</g, '\\u003c') + `;
+    window.__initialDeviceName = ` + JSON.stringify(device && device.hostname ? device.hostname : '').replace(/</g, '\\u003c') + `;
+    window.__capabilities = ` + JSON.stringify(capabilities || { transport: 'rd' }).replace(/</g, '\\u003c') + `;
+    window.__guestToken = ` + JSON.stringify((typeof guestToken !== 'undefined' && guestToken) ? guestToken : '').replace(/</g, '\\u003c') + `;
 </script>
 
 `

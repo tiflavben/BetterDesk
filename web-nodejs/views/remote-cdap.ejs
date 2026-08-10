@@ -95,7 +95,7 @@
 
 <script nonce="${cspNonce}">
 (function () {
-  const deviceId = ${JSON.stringify(deviceId)};
+  const deviceId = ${JSON.stringify(deviceId).replace(/</g, '\\u003c')};
   const widgetId = 'remote-full';
 
   function openDesktopSession() {

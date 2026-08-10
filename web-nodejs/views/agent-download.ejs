@@ -132,7 +132,7 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'
     <script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
         // Poll manifest every 8s while at least one platform is still building.
         (function () {
-            const publicId = <%- JSON.stringify(bundle.public_id) %>;
+            const publicId = <%- JSON.stringify(bundle.public_id).replace(/</g, '\\u003c') %>;
             const t = <%- JSON.stringify({
                 building: t('download.building'),
                 failed:   t('download.failed'),

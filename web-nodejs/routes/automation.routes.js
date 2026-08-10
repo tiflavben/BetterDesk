@@ -52,7 +52,7 @@ const VALID_OPERATORS = ['gt', 'gte', 'lt', 'lte', 'eq', 'neq'];
 const VALID_SEVERITIES = ['info', 'warning', 'critical'];
 const VALID_COMMAND_TYPES = ['shell', 'powershell', 'script', 'restart_service', 'reboot'];
 
-const { requireAuth, requirePermission } = require('../middleware/auth');
+const { requireAuth, requirePermission, roleHasPermission } = require('../middleware/auth');
 
 // ---------------------------------------------------------------------------
 //  Auth middleware
@@ -85,8 +85,9 @@ async function identifyDevice(req, res, next) {
 
 /**
  * GET /api/automation/rules — List all alert rules.
+ * Rules are server-level configuration — read requires server.config.
  */
-router.get('/rules', requireAuth, async (req, res) => {
+router.get('/rules', requireAuth, requirePermission('server.config'), async (req, res) => {
     try {
         const adapter = getAdapter();
         const rules = await adapter.getAlertRules();
@@ -144,7 +145,7 @@ router.post('/rules', requireAuth, requirePermission('server.config'), async (re
 /**
  * GET /api/automation/rules/:id — Get alert rule.
  */
-router.get('/rules/:id(\\d+)', requireAuth, async (req, res) => {
+router.get('/rules/:id(\\d+)', requireAuth, requirePermission('server.config'), async (req, res) => {
     try {
         const adapter = getAdapter();
         const rule = await adapter.getAlertRuleById(+req.params.id);
@@ -231,7 +232,7 @@ router.delete('/rules/:id(\d+)', requireAuth, requirePermission('server.config')
  * GET /api/automation/alerts — List alert history.
  * Query params: device_id, severity, acknowledged, limit
  */
-router.get('/alerts', requireAuth, async (req, res) => {
+router.get('/alerts', requireAuth, requirePermission('audit.view'), async (req, res) => {
     try {
         const adapter = getAdapter();
         const filters = {};
@@ -251,7 +252,7 @@ router.get('/alerts', requireAuth, async (req, res) => {
 /**
  * POST /api/automation/alerts/:id/ack — Acknowledge an alert.
  */
-router.post('/alerts/:id(\\d+)/ack', requireAuth, async (req, res) => {
+router.post('/alerts/:id(\\d+)/ack', requireAuth, requirePermission('audit.view'), async (req, res) => {
     try {
         const adapter = getAdapter();
         await adapter.acknowledgeAlert(+req.params.id, req.session.user.username);
@@ -308,8 +309,31 @@ router.post('/commands', requireAuth, requirePermission('server.config'), async 
 /**
  * GET /api/automation/commands — List commands.
  * Query params: device_id, status, limit
+ * Mounted at both /api/automation (admin session) and /api/bd (device agent
+ * polls for pending commands). Route on req.baseUrl to pick the right
+ * identity model — registering two handlers for the same path would shadow
+ * the device-facing one (Express matches the first registered route).
  */
-router.get('/commands', requireAuth, async (req, res) => {
+router.get('/commands', async (req, res) => {
+    const isDeviceFace = req.baseUrl === '/api/bd';
+    if (isDeviceFace) {
+        return identifyDevice(req, res, async () => {
+            try {
+                const adapter = getAdapter();
+                const commands = await adapter.getPendingCommands(req.deviceId);
+                res.json({ commands });
+            } catch (err) {
+                console.error('[Automation] Pending commands error:', err.message);
+                res.status(500).json({ error: 'Internal server error' });
+            }
+        });
+    }
+    if (!req.session || !req.session.userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+    }
+    if (!roleHasPermission(req.session.user.role, 'server.config')) {
+        return res.status(403).json({ error: 'Permission denied: server.config' });
+    }
     try {
         const adapter = getAdapter();
         const filters = {};
@@ -328,7 +352,7 @@ router.get('/commands', requireAuth, async (req, res) => {
 /**
  * GET /api/automation/commands/:id — Get command details.
  */
-router.get('/commands/:id(\\d+)', requireAuth, async (req, res) => {
+router.get('/commands/:id(\\d+)', requireAuth, requirePermission('server.config'), async (req, res) => {
     try {
         const adapter = getAdapter();
         const cmd = await adapter.getRemoteCommandById(+req.params.id);
@@ -342,21 +366,8 @@ router.get('/commands/:id(\\d+)', requireAuth, async (req, res) => {
 
 // ===========================================================================
 //  Device-facing: Agent polls for commands
+//  (GET /commands handled above — merged admin/device route on req.baseUrl)
 // ===========================================================================
-
-/**
- * GET /api/bd/commands — Get pending commands for this device.
- */
-router.get('/commands', identifyDevice, async (req, res) => {
-    try {
-        const adapter = getAdapter();
-        const commands = await adapter.getPendingCommands(req.deviceId);
-        res.json({ commands });
-    } catch (err) {
-        console.error('[Automation] Pending commands error:', err.message);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
 
 /**
  * POST /api/bd/commands/:id/result — Agent submits command result.

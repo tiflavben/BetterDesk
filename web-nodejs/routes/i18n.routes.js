@@ -6,7 +6,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const { manager, isValidLangCode } = require('../services/i18nService');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requirePermission } = require('../middleware/auth');
 const db = require('../services/database');
 
 // Configure multer for JSON file uploads
@@ -141,8 +141,10 @@ router.get('/validate/:code', requireAuth, (req, res) => {
 
 /**
  * POST /upload - Upload a new language file
+ * Writes a language pack to disk and makes it available to every visitor's
+ * login/desktop pages — server-level configuration, admin only.
  */
-router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
+router.post('/upload', requireAuth, requirePermission('server.config'), upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({
@@ -203,9 +205,9 @@ router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
 });
 
 /**
- * DELETE /:code - Delete a language
+ * DELETE /:code - Delete a language (server-level config, admin only)
  */
-router.delete('/:code', requireAuth, async (req, res) => {
+router.delete('/:code', requireAuth, requirePermission('server.config'), async (req, res) => {
     try {
         const { code } = req.params;
         

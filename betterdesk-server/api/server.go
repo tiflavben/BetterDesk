@@ -1044,6 +1044,9 @@ func (s *Server) handleGetPeer(w http.ResponseWriter, r *http.Request) {
 // GET /api/peers/{id}/linked
 func (s *Server) handleLinkedPeers(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !s.peerOrgScopeCheck(w, r, id) {
+		return
+	}
 	linked, err := s.db.GetLinkedPeers(id)
 	if err != nil {
 		writeInternalError(w, err, "GetLinkedPeers")
@@ -1513,6 +1516,9 @@ func (s *Server) handleOnlinePeers(w http.ResponseWriter, r *http.Request) {
 // GET /api/peers/{id}/status
 func (s *Server) handlePeerStatus(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !s.peerOrgScopeCheck(w, r, id) {
+		return
+	}
 
 	snap, ok := s.peers.GetSnapshot(id, config.DegradedThreshold, config.CriticalThreshold)
 	if !ok {

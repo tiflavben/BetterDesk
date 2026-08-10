@@ -704,6 +704,21 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Cannot set a local password on an LDAP/OIDC account"})
 			return
 		}
+		// Privilege boundary (mirrors the role-change guards below): a caller
+		// without super-admin rights must not reset the password of a super
+		// admin / server admin account. Without this, any role granted
+		// user.edit (e.g. global_admin, or an operator via a DB override)
+		// could take over the server by rotating an elevated account's
+		// password — the role path is guarded, the password path was not.
+		callerRole := getRoleFromCtx(r)
+		if auth.IsSuperAdminRole(user.Role) && !auth.IsSuperAdminRole(callerRole) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "Cannot change the password of a super admin"})
+			return
+		}
+		if user.IsServerAdmin && !auth.IsSuperAdminRole(callerRole) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "Only server admins can change this account's password"})
+			return
+		}
 		hash, err := auth.HashPassword(body.Password)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Password hash failed"})

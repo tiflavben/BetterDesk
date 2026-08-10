@@ -143,7 +143,7 @@
         <!-- Session expired indicator (shown when redirected from session timeout) -->
         <script nonce="<%= cspNonce %>">
             window.BetterDesk = window.BetterDesk || {};
-            window.BetterDesk.users = <%- JSON.stringify(loginUsers || []) %>;
+            window.BetterDesk.users = <%- JSON.stringify(loginUsers || []).replace(/</g, '\\u003c') %>;
             window.BetterDesk.csrfToken = '<%= csrfToken %>';
             // Detect session expiry: if we arrived from a non-login page, session expired
             if (document.referrer && !document.referrer.includes('/login')) {
@@ -166,10 +166,10 @@
         window.BetterDesk = {
             csrfToken: '<%= csrfToken || "" %>',
             lang: '<%= lang || "en" %>',
-            availableLanguages: <%- JSON.stringify(availableLanguageList || []) %>,
-            translations: <%- JSON.stringify(translations || {}) %>,
-            branding: <%- JSON.stringify(branding || {}) %>,
-            users: <%- JSON.stringify(loginUsers || []) %>
+            availableLanguages: <%- JSON.stringify(availableLanguageList || []).replace(/</g, '\\u003c') %>,
+            translations: <%- JSON.stringify(translations || {}).replace(/</g, '\\u003c') %>,
+            branding: <%- JSON.stringify(branding || {}).replace(/</g, '\\u003c') %>,
+            users: <%- JSON.stringify(loginUsers || []).replace(/</g, '\\u003c') %>
         };
     </script>
     <script src="/js/utils.js?v=<%= cacheVersion %>"></script>

@@ -15,7 +15,22 @@ const updateService = require('./updateService');
 
 const CONSOLE_ROOT = path.join(__dirname, '..');
 const REPO_ROOT = path.join(CONSOLE_ROOT, '..');
-const SYSTEMD_SERVER_UNIT = '/etc/systemd/system/betterdesk-server.service';
+// Upstream ships betterdesk-server.service; our fork deploys
+// betterdesk-master.service (master) / betterdesk-relay*.service (relays).
+// Probe all candidates so the connection-mode panel stays writable on
+// either deployment.
+const SYSTEMD_SERVER_CANDIDATES = [
+    '/etc/systemd/system/betterdesk-server.service',
+    '/etc/systemd/system/betterdesk-master.service'
+];
+function resolveSystemdUnit() {
+    for (const candidate of SYSTEMD_SERVER_CANDIDATES) {
+        try {
+            if (fs.existsSync(candidate)) return candidate;
+        } catch (_) { /* keep probing */ }
+    }
+    return SYSTEMD_SERVER_CANDIDATES[0];
+}
 const DOCKER_COMPOSE_PATH = path.join(REPO_ROOT, 'docker-compose.yml');
 
 const MANAGED_ENV_KEYS = ['P2P_FIRST', 'ALWAYS_USE_RELAY', 'P2P_FALLBACK_MS', 'SAME_NAT_RELAY'];
@@ -32,7 +47,7 @@ function isDockerRuntime() {
 
 function systemdUnitExists() {
     try {
-        return fs.existsSync(SYSTEMD_SERVER_UNIT);
+        return SYSTEMD_SERVER_CANDIDATES.some((candidate) => fs.existsSync(candidate));
     } catch (_) {
         return false;
     }
@@ -312,7 +327,7 @@ function settingsFromEnv(env, source) {
 }
 
 async function readSystemdSettings() {
-    const content = await fsp.readFile(SYSTEMD_SERVER_UNIT, 'utf8');
+    const content = await fsp.readFile(resolveSystemdUnit(), 'utf8');
     return settingsFromEnv(parseSystemdEnvironment(content), 'systemd');
 }
 
@@ -333,11 +348,11 @@ async function getConnectionMode() {
 }
 
 async function writeSystemdSettings(settings) {
-    const content = await fsp.readFile(SYSTEMD_SERVER_UNIT, 'utf8');
+    const content = await fsp.readFile(resolveSystemdUnit(), 'utf8');
     const vars = envVarsFromSettings(settings);
     const next = patchSystemdEnvironment(content, vars);
-    await fsp.writeFile(SYSTEMD_SERVER_UNIT, next, { encoding: 'utf8', mode: 0o644 });
-    return { path: SYSTEMD_SERVER_UNIT, vars };
+    await fsp.writeFile(resolveSystemdUnit(), next, { encoding: 'utf8', mode: 0o644 });
+    return { path: resolveSystemdUnit(), vars };
 }
 
 async function writeDockerSettings(settings) {

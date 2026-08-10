@@ -74,8 +74,10 @@ func TestSessionAmountCalculation(t *testing.T) {
 // embedded nil interface — tests must not touch them.
 type fakeBillingDB struct {
 	db.Database
-	contracts map[string]*db.BillingContract // "type|key" -> contract
-	orgIDs    map[string]string
+	contracts    map[string]*db.BillingContract // "type|key" -> contract
+	orgIDs       map[string]string
+	onlineByUser map[string]int
+	onlineByOrg  map[string]int
 }
 
 func (f *fakeBillingDB) GetActiveBillingContract(targetType, targetKey string) (*db.BillingContract, error) {
@@ -85,6 +87,16 @@ func (f *fakeBillingDB) GetActiveBillingContract(targetType, targetKey string) (
 func (f *fakeBillingDB) GetDeviceOrgID(deviceID string) (string, error) {
 	return f.orgIDs[deviceID], nil
 }
+
+func (f *fakeBillingDB) CountOnlinePeersByUser(username string) (int, error) {
+	return f.onlineByUser[username], nil
+}
+
+func (f *fakeBillingDB) CountOnlinePeersByOrg(orgID string) (int, error) {
+	return f.onlineByOrg[orgID], nil
+}
+
+// fakeBillingDB fields used by the device-limit tests.
 
 func contractFor(key string, status string, validUntil *time.Time) *db.BillingContract {
 	return &db.BillingContract{

@@ -261,6 +261,11 @@ func (s *Service) CheckConnection(deviceID string) ConnectionCheckResult {
 	// Device-limit enforcement: a positive DeviceLimit caps how many
 	// devices owned by the contract target (user or org) may be online
 	// at once. The target key is the owner name/org id used in billing.
+	// Note: the target device is already counted as ONLINE by the query —
+	// it must be online to be reachable — so connecting to it does not
+	// grow the online set. Reject only when the count is strictly ABOVE
+	// the limit; using >= would make a fully-used limit (online == limit)
+	// unreachable for every device owned by the target.
 	if contract.DeviceLimit > 0 && contract.TargetKey != "" {
 		var online int
 		var err error
@@ -271,7 +276,7 @@ func (s *Service) CheckConnection(deviceID string) ConnectionCheckResult {
 		}
 		if err != nil {
 			log.Printf("[billing] device-limit count for %q: %v", contract.TargetKey, err)
-		} else if online >= contract.DeviceLimit {
+		} else if online > contract.DeviceLimit {
 			return ConnectionCheckResult{Allowed: false, Reason: "device_limit_reached", OrgID: orgID, HasBilling: true}
 		}
 	}

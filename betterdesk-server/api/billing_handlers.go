@@ -120,8 +120,12 @@ func (s *Server) handleCreateBillingContract(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if body.PackageID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "package_id required"})
-		return
+		pkg, err := s.resolveOrCreateDefaultPackage()
+		if err != nil {
+			writeInternalError(w, err, "resolve default billing package")
+			return
+		}
+		body.PackageID = pkg.ID
 	}
 	if body.ID == "" {
 		body.ID = uuid.New().String()
@@ -151,6 +155,36 @@ func (s *Server) handleCreateBillingContract(w http.ResponseWriter, r *http.Requ
 	}
 	body.FillLegacyOrgFields()
 	writeJSON(w, http.StatusCreated, body)
+}
+
+// resolveOrCreateDefaultPackage returns the first existing billing package,
+// creating a system default one when the packages table is empty. This lets
+// user-scoped contracts be created without the panel having to understand
+// packages at all (admin edits device limit / quota / expiry directly).
+func (s *Server) resolveOrCreateDefaultPackage() (*db.BillingPackage, error) {
+	pkgs, err := s.db.ListBillingPackages()
+	if err != nil {
+		return nil, err
+	}
+	if len(pkgs) > 0 {
+		return pkgs[0], nil
+	}
+	def := &db.BillingPackage{
+		ID:              uuid.New().String(),
+		Name:            "default",
+		Description:     "System default package (auto-created)",
+		IncludedMinutes: 0,
+		OverageRate:     0,
+		Currency:        "PLN",
+	}
+	if err := s.db.CreateBillingPackage(def); err != nil {
+		// Concurrent creation may have won the race; fall back to listing again.
+		if pkgs, listErr := s.db.ListBillingPackages(); listErr == nil && len(pkgs) > 0 {
+			return pkgs[0], nil
+		}
+		return nil, err
+	}
+	return def, nil
 }
 
 // PUT /api/billing/contracts/{id}

@@ -427,7 +427,7 @@ router.patch('/api/devices/:id', requireAuth, requirePermission('device.edit'), 
  * DELETE /api/devices/:id - Delete device (soft delete)
  * Query params: revoke=true (blocklist + disconnect), cascade=true (delete linked devices)
  */
-router.delete('/api/devices/:id', requireAuth, requirePermission('device.delete'), async (req, res) => {
+router.delete('/api/devices/:id', requireAuth, async (req, res) => {
     try {
         const id = req.params.id;
         const revoke = req.query.revoke === 'true';
@@ -488,9 +488,17 @@ router.delete('/api/devices/:id', requireAuth, requirePermission('device.delete'
 /**
  * POST /api/devices/:id/restore - Restore a soft-deleted device
  */
-router.post('/api/devices/:id/restore', requireAuth, requirePermission('device.delete'), async (req, res) => {
+router.post('/api/devices/:id/restore', requireAuth, async (req, res) => {
     try {
         const id = req.params.id;
+        const device = await serverBackend.getDeviceById(id, { includeDeleted: true });
+        if (!device) {
+            return res.status(404).json({
+                success: false,
+                error: req.t('devices.not_found')
+            });
+        }
+        if (await rejectIfDeviceOutOfScope(req, res, device)) return;
         const result = await serverBackend.restoreDevice(id);
         if (!result || !result.success) {
             const status = result?.error === 'peer not found' ? 404 : 500;
@@ -510,7 +518,7 @@ router.post('/api/devices/:id/restore', requireAuth, requirePermission('device.d
 /**
  * POST /api/devices/:id/ban - Ban device
  */
-router.post('/api/devices/:id/ban', requireAuth, requirePermission('device.ban'), async (req, res) => {
+router.post('/api/devices/:id/ban', requireAuth, async (req, res) => {
     try {
         const id = req.params.id;
         const { reason } = req.body;
@@ -542,7 +550,7 @@ router.post('/api/devices/:id/ban', requireAuth, requirePermission('device.ban')
 /**
  * POST /api/devices/:id/unban - Unban device
  */
-router.post('/api/devices/:id/unban', requireAuth, requirePermission('device.ban'), async (req, res) => {
+router.post('/api/devices/:id/unban', requireAuth, async (req, res) => {
     try {
         const id = req.params.id;
         
@@ -814,9 +822,18 @@ const bdRelay = require('../services/bdRelay');
 /**
  * Wrap an agent-proxy request with consistent error handling and timeout.
  * Distinct error codes help the UI render appropriate states.
+ *
+ * Enforces the device scope (group/owner ACL) before proxying — without it
+ * any user holding device.view/device.edit could interrogate devices
+ * outside their scope (services, processes, files, terminal, input…).
  */
 async function proxyAgentRequest(req, res, type, payload = null, timeoutMs = 15000) {
     try {
+        const device = await serverBackend.getDeviceById(req.params.id);
+        if (!device) {
+            return res.status(404).json({ success: false, error: req.t('devices.not_found') });
+        }
+        if (await rejectIfDeviceOutOfScope(req, res, device)) return;
         const data = await bdRelay.requestFromDevice(req.params.id, type, payload, timeoutMs);
         res.json({ success: true, data });
     } catch (err) {
@@ -1048,6 +1065,7 @@ router.post('/api/devices/:id/rename', requireAuth, requirePermission('device.ed
         if (!device) {
             return res.status(404).json({ success: false, error: req.t('devices.not_found') });
         }
+        if (await rejectIfDeviceOutOfScope(req, res, device)) return;
         const result = await serverBackend.updateDevice(req.params.id, { display_name: displayName });
         await db.logAction(req.session.userId, 'device.rename',
             `Device ${req.params.id} renamed to "${displayName}"`, req.ip || null);
