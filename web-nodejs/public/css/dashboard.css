@@ -1139,3 +1139,16 @@
         margin-right: var(--space-xs);
     }
 }
+
+/* Self-service subscription card (non-admin dashboard) */
+.my-contract-card {
+    margin-top: 16px; padding: 16px;
+    border: 1px solid var(--border-color, rgba(128,128,128,.25));
+    border-radius: 12px; background: var(--surface-color, #fff);
+}
+.my-contract-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 10px; }
+@media (max-width: 640px) { .my-contract-grid { grid-template-columns: 1fr; } }
+.contract-metric { display: flex; flex-direction: column; gap: 4px; }
+.contract-metric-label { font-size: 12px; color: var(--text-muted, #888); text-transform: uppercase; letter-spacing: .04em; }
+.contract-metric-value { font-size: 18px; font-weight: 600; }
+.contract-metric-value.text-danger { color: var(--danger-color, #e5484d); }

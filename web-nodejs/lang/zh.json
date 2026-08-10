@@ -186,7 +186,11 @@
     "intune_script_title": "Windows 部署片段",
     "intune_script_hint": "在 RustDesk MSI 完成后以管理员身份运行。使用与“复制部署字符串”相同的 config 字符串。",
     "deploy_string_not_ready": "在加载服务器公钥之前，部署字符串不可用。",
-    "client_server_host_env_hint": "公共 ID、中继和 API 已在 设置 → 公共客户端端点 中配置。清除后可再次使用此覆盖字段。"
+    "client_server_host_env_hint": "公共 ID、中继和 API 已在 设置 → 公共客户端端点 中配置。清除后可再次使用此覆盖字段。",
+    "my_contract": "我的订阅",
+    "expiry": "到期时间",
+    "traffic_used": "流量使用",
+    "device_limit": "设备限额"
   },
   "devices": {
     "title": "设备",

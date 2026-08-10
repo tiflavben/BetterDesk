@@ -317,6 +317,23 @@ router.get('/api/users', requireAuth, requirePermission('user.view'), async (req
 });
 
 /**
+ * GET /api/me/contract — self-service contract summary for the signed-in
+ * user (expiry, traffic quota/usage, device limit). No admin permission
+ * required; only the caller's own contract is returned.
+ */
+router.get('/api/me/contract', requireAuth, async (req, res) => {
+    try {
+        const goUsers = await betterdeskApi.getUsers();
+        const goList = Array.isArray(goUsers) ? goUsers : (goUsers.data && (goUsers.data.users || goUsers.data)) || [];
+        const me = goList.find(u => u.username === req.session.user.username);
+        res.json({ success: true, data: { contract: (me && me.contract) || null } });
+    } catch (err) {
+        console.warn('Get my contract error:', err.message);
+        res.status(500).json({ success: false, error: req.t('errors.server_error') });
+    }
+});
+
+/**
  * GET /api/panel/user-groups - Get user groups for panel assignment UIs.
  */
 router.get('/api/panel/user-groups', requireAuth, requireAnyPermission('user.view', 'device.edit'), async (req, res) => {

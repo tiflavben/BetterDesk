@@ -85,6 +85,31 @@
                         </article>
                     </section>
 
+                    ${!isAdminUser ? `
+                    <section class="my-contract-card" id="my-contract-section" aria-labelledby="my-contract-title">
+                        <div class="section-header">
+                            <h2 class="section-title" id="my-contract-title">
+                                <span class="material-icons">event</span>
+                                ${_('dashboard.my_contract')}
+                            </h2>
+                        </div>
+                        <div class="my-contract-grid">
+                            <div class="contract-metric">
+                                <span class="contract-metric-label">${_('dashboard.expiry')}</span>
+                                <span class="contract-metric-value" id="my-contract-expiry">—</span>
+                            </div>
+                            <div class="contract-metric">
+                                <span class="contract-metric-label">${_('dashboard.traffic_used')}</span>
+                                <span class="contract-metric-value" id="my-contract-traffic">—</span>
+                            </div>
+                            <div class="contract-metric">
+                                <span class="contract-metric-label">${_('dashboard.device_limit')}</span>
+                                <span class="contract-metric-value" id="my-contract-devices">—</span>
+                            </div>
+                        </div>
+                    </section>
+                    ` : ''}
+
                     <section class="client-config-card" aria-labelledby="client-config-title">
                         <div class="client-config-header">
                             <div>

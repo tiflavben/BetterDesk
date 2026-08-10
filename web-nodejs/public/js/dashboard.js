@@ -186,6 +186,51 @@
             loadServerStatus()
         ]);
         loadHealthOverview(stats, status);
+        loadMyContract();
+    }
+
+    /**
+     * Self-service subscription card: shows the signed-in user's contract
+     * expiry, traffic usage/quota and device limit (non-admin dashboard).
+     */
+    async function loadMyContract() {
+        const section = findById('my-contract-section');
+        if (!section) return;
+        const username = window.BetterDesk?.user?.username;
+        if (!username) return;
+        try {
+            const resp = await fetch('/api/me/contract', { headers: { 'Accept': 'application/json' } });
+            const data = await resp.json();
+            const c = data?.data?.contract || null;
+            if (!c) {
+                section.style.display = 'none';
+                return;
+            }
+            const expEl = findById('my-contract-expiry');
+            if (expEl) {
+                expEl.textContent = c.valid_until ? Utils.formatDate(c.valid_until) : '—';
+                if (c.valid_until) {
+                    try {
+                        const exp = new Date(String(c.valid_until).replace(' ', 'T'));
+                        if (exp < new Date()) expEl.classList.add('text-danger');
+                    } catch (_) {}
+                }
+            }
+            const tEl = findById('my-contract-traffic');
+            if (tEl) {
+                const used = Math.round((c.used_bytes || 0) / 1048576);
+                const quota = Math.round((c.quota_bytes || 0) / 1048576);
+                tEl.textContent = quota > 0
+                    ? `${used} / ${quota} MB`
+                    : (used > 0 ? `${used} MB` : '—');
+            }
+            const dEl = findById('my-contract-devices');
+            if (dEl) {
+                dEl.textContent = (c.device_limit ?? 0) > 0 ? String(c.device_limit) : '—';
+            }
+        } catch (e) {
+            console.warn('My contract card skipped:', e.message);
+        }
     }
     
     /**
