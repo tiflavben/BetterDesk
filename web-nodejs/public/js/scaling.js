@@ -119,8 +119,8 @@
         }
         grid.innerHTML = _relays.map(r => {
             const status = r.status || 'offline';
-            const cpuPct = r.cpu || 0;
-            const memPct = r.memory || 0;
+            const cpuPct = Math.round(r.cpu || 0);
+            const memPct = Math.round(r.memory || 0);
             const bwPct = r.max_bandwidth_mbps ? Math.round((r.bandwidth_mbps || 0) / r.max_bandwidth_mbps * 100) : 0;
             const sessPct = r.max_sessions ? Math.round((r.active_sessions || 0) / r.max_sessions * 100) : 0;
             return `

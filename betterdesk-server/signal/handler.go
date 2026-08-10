@@ -2222,6 +2222,19 @@ func (s *Server) getLANRelayServer(defaultRelay string, peers ...*net.UDPAddr) s
 	// clients and must not be advertised as relay addresses (#142).
 	if ip, ok := s.lanIP.Load().(string); ok && ip != "" {
 		lanIP := net.ParseIP(ip)
+
+		// Split-deployment guard: if the hashed relay choice already lives on
+		// a private address (dedicated relay tier on the LAN, e.g. relay nodes
+		// 192.168.1.102/103 while this signal host is 192.168.1.101), LAN peers
+		// can reach it directly. Replacing it with the signal server's own IP
+		// would advertise a relay that is NOT listening on this host
+		// (signal-only node) and clients fail with "Relay connection closed".
+		if host, _, err := net.SplitHostPort(defaultRelay); err == nil {
+			if rip := net.ParseIP(host); rip != nil && isPrivateIP(rip) {
+				return defaultRelay
+			}
+		}
+
 		if !isLANRelayReachableFromPeers(lanIP, peers...) {
 			log.Printf("[signal] LAN relay %s is outside peer subnet; using configured/default relay=%s", ip, defaultRelay)
 			return defaultRelay

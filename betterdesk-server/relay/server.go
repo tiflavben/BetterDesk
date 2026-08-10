@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -173,6 +174,8 @@ func (s *Server) SetHeartbeatDB(db *sql.DB, nodeID string) {
 func (s *Server) heartbeatLoop() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
+	prevCPU := readCPUStat()
+	prevBytes := s.TotalBytes.Load()
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -181,12 +184,72 @@ func (s *Server) heartbeatLoop() {
 			if s.heartbeatDB == nil {
 				return
 			}
+			curCPU := readCPUStat()
+			cpuPct := cpuPercent(prevCPU, curCPU)
+			prevCPU = curCPU
+			curBytes := s.TotalBytes.Load()
+			// bandwidth = bytes delta * 8 bits / interval (10s) -> Mbps
+			bwMbps := float64(curBytes-prevBytes) * 8 / 1e6 / 10
+			prevBytes = curBytes
+			_, memPct := readMemStats()
 			if err := db.UpsertRelayHeartbeat(s.heartbeatDB, s.heartbeatNodeID, s.heartbeatNodeID,
-				s.ActiveSessions.Load(), s.TotalBytes.Load()); err != nil {
+				s.ActiveSessions.Load(), curBytes, cpuPct, memPct, bwMbps); err != nil {
 				log.Printf("[relay] heartbeat: %v", err)
 			}
 		}
 	}
+}
+
+// cpuStat is a /proc/stat cpu-line sample (Linux).
+type cpuStat struct {
+	idle, total uint64
+}
+
+// readCPUStat samples the aggregate CPU counters from /proc/stat.
+func readCPUStat() cpuStat {
+	var st cpuStat
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return st
+	}
+	var a, b, c, d, e, f, g, h uint64
+	n, _ := fmt.Sscanf(string(data), "cpu %d %d %d %d %d %d %d %d", &a, &b, &c, &d, &e, &f, &g, &h)
+	if n < 4 {
+		return st
+	}
+	st.idle = d + e
+	st.total = a + b + c + d + e + f + g + h
+	return st
+}
+
+// cpuPercent computes the utilization between two samples (0..100).
+func cpuPercent(prev, cur cpuStat) float64 {
+	dt := cur.total - prev.total
+	if dt == 0 {
+		return 0
+	}
+	return float64(dt-(cur.idle-prev.idle)) / float64(dt) * 100
+}
+
+// readMemStats returns (totalMB, usedPercent) from /proc/meminfo.
+func readMemStats() (float64, float64) {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0, 0
+	}
+	var totalKB, availKB float64
+	for _, line := range strings.Split(string(data), "\n") {
+		switch {
+		case strings.HasPrefix(line, "MemTotal:"):
+			fmt.Sscanf(line, "MemTotal: %f", &totalKB)
+		case strings.HasPrefix(line, "MemAvailable:"):
+			fmt.Sscanf(line, "MemAvailable: %f", &availKB)
+		}
+	}
+	if totalKB <= 0 {
+		return 0, 0
+	}
+	return totalKB / 1024, (totalKB - availKB) / totalKB * 100
 }
 
 // Start launches the relay TCP listener.

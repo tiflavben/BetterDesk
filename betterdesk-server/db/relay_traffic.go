@@ -53,6 +53,9 @@ const (
 		addr TEXT NOT NULL DEFAULT '',
 		active_sessions INTEGER NOT NULL DEFAULT 0,
 		total_bytes BIGINT NOT NULL DEFAULT 0,
+		cpu_percent REAL NOT NULL DEFAULT 0,
+		mem_percent REAL NOT NULL DEFAULT 0,
+		bandwidth_mbps REAL NOT NULL DEFAULT 0,
 		last_seen TEXT NOT NULL DEFAULT (datetime('now'))
 	)`
 	relayHeartbeatDDLPostgres = `CREATE TABLE IF NOT EXISTS relay_heartbeat (
@@ -60,39 +63,84 @@ const (
 		addr TEXT NOT NULL DEFAULT '',
 		active_sessions INTEGER NOT NULL DEFAULT 0,
 		total_bytes BIGINT NOT NULL DEFAULT 0,
+		cpu_percent DOUBLE PRECISION NOT NULL DEFAULT 0,
+		mem_percent DOUBLE PRECISION NOT NULL DEFAULT 0,
+		bandwidth_mbps DOUBLE PRECISION NOT NULL DEFAULT 0,
 		last_seen TEXT NOT NULL DEFAULT NOW()
 	)`
 )
 
-// EnsureRelayHeartbeatTable creates the shared relay heartbeat table.
+// EnsureRelayHeartbeatTable creates the shared relay heartbeat table and
+// migrates pre-existing tables (added cpu/mem/bandwidth columns).
 func EnsureRelayHeartbeatTable(db *sql.DB) error {
 	if db == nil {
 		return fmt.Errorf("db: nil database for relay heartbeat table")
 	}
 	ddl := relayHeartbeatDDLSQLite
-	if isPostgresDriver(db) {
+	pg := isPostgresDriver(db)
+	if pg {
 		ddl = relayHeartbeatDDLPostgres
 	}
 	if _, err := db.Exec(ddl); err != nil {
 		return fmt.Errorf("db: relay heartbeat migrate: %w", err)
 	}
+	// Column migration for tables created before the metrics columns.
+	have := func(col string) bool {
+		if pg {
+			var n int
+			// information_schema check is robust across PG versions.
+			_ = db.QueryRow(`SELECT COUNT(*) FROM information_schema.columns
+				WHERE table_name='relay_heartbeat' AND column_name=$1`, col).Scan(&n)
+			return n > 0
+		}
+		rows, err := db.Query(`PRAGMA table_info(relay_heartbeat)`)
+		if err != nil {
+			return true // leave as-is on error
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var cid, notnull, pk int
+			var name, ctype string
+			var dflt any
+			if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+				return true
+			}
+			if name == col {
+				return true
+			}
+		}
+		return false
+	}
+	for _, col := range []struct{ name, typ string }{
+		{"cpu_percent", "REAL"}, {"mem_percent", "REAL"}, {"bandwidth_mbps", "REAL"},
+	} {
+		if have(col.name) {
+			continue
+		}
+		if _, err := db.Exec("ALTER TABLE relay_heartbeat ADD COLUMN " + col.name + " " + col.typ + " NOT NULL DEFAULT 0"); err != nil {
+			return fmt.Errorf("db: relay heartbeat add column %s: %w", col.name, err)
+		}
+	}
 	return nil
 }
 
-// UpsertRelayHeartbeat records (or refreshes) a relay node's liveness row.
-func UpsertRelayHeartbeat(db *sql.DB, nodeID, addr string, activeSessions, totalBytes int64) error {
+// UpsertRelayHeartbeat records (or refreshes) a relay node's liveness row,
+// including per-node system metrics (cpu/mem percent, bandwidth Mbps).
+func UpsertRelayHeartbeat(db *sql.DB, nodeID, addr string, activeSessions, totalBytes int64, cpuPct, memPct, bwMbps float64) error {
 	if db == nil {
 		return fmt.Errorf("db: nil database for relay heartbeat upsert")
 	}
-	q := "INSERT INTO relay_heartbeat (node_id, addr, active_sessions, total_bytes) VALUES (?, ?, ?, ?) " +
+	q := "INSERT INTO relay_heartbeat (node_id, addr, active_sessions, total_bytes, cpu_percent, mem_percent, bandwidth_mbps) VALUES (?, ?, ?, ?, ?, ?, ?) " +
 		"ON CONFLICT(node_id) DO UPDATE SET addr=excluded.addr, active_sessions=excluded.active_sessions, " +
-		"total_bytes=excluded.total_bytes, last_seen=datetime('now')"
+		"total_bytes=excluded.total_bytes, cpu_percent=excluded.cpu_percent, mem_percent=excluded.mem_percent, " +
+		"bandwidth_mbps=excluded.bandwidth_mbps, last_seen=datetime('now')"
 	if isPostgresDriver(db) {
-		q = "INSERT INTO relay_heartbeat (node_id, addr, active_sessions, total_bytes) VALUES ($1, $2, $3, $4) " +
+		q = "INSERT INTO relay_heartbeat (node_id, addr, active_sessions, total_bytes, cpu_percent, mem_percent, bandwidth_mbps) VALUES ($1, $2, $3, $4, $5, $6, $7) " +
 			"ON CONFLICT(node_id) DO UPDATE SET addr=EXCLUDED.addr, active_sessions=EXCLUDED.active_sessions, " +
-			"total_bytes=EXCLUDED.total_bytes, last_seen=NOW()"
+			"total_bytes=EXCLUDED.total_bytes, cpu_percent=EXCLUDED.cpu_percent, mem_percent=EXCLUDED.mem_percent, " +
+			"bandwidth_mbps=EXCLUDED.bandwidth_mbps, last_seen=NOW()"
 	}
-	_, err := db.Exec(q, nodeID, addr, activeSessions, totalBytes)
+	_, err := db.Exec(q, nodeID, addr, activeSessions, totalBytes, cpuPct, memPct, bwMbps)
 	return err
 }
 
@@ -102,6 +150,9 @@ type RelayHeartbeat struct {
 	Addr           string
 	ActiveSessions int64
 	TotalBytes     int64
+	CPUPercent     float64
+	MemPercent     float64
+	BandwidthMbps  float64
 	LastSeen       string
 }
 
@@ -110,11 +161,7 @@ func GetAllRelayHeartbeats(db *sql.DB) (map[string]RelayHeartbeat, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db: nil database for relay heartbeat read")
 	}
-	q := "SELECT node_id, addr, active_sessions, total_bytes, last_seen FROM relay_heartbeat"
-	if isPostgresDriver(db) {
-		q = "SELECT node_id, addr, active_sessions, total_bytes, last_seen FROM relay_heartbeat"
-	}
-	rows, err := db.Query(q)
+	rows, err := db.Query(`SELECT node_id, addr, active_sessions, total_bytes, cpu_percent, mem_percent, bandwidth_mbps, last_seen FROM relay_heartbeat`)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +169,7 @@ func GetAllRelayHeartbeats(db *sql.DB) (map[string]RelayHeartbeat, error) {
 	out := map[string]RelayHeartbeat{}
 	for rows.Next() {
 		var h RelayHeartbeat
-		if err := rows.Scan(&h.NodeID, &h.Addr, &h.ActiveSessions, &h.TotalBytes, &h.LastSeen); err != nil {
+		if err := rows.Scan(&h.NodeID, &h.Addr, &h.ActiveSessions, &h.TotalBytes, &h.CPUPercent, &h.MemPercent, &h.BandwidthMbps, &h.LastSeen); err != nil {
 			return nil, err
 		}
 		out[h.NodeID] = h

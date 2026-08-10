@@ -22,6 +22,9 @@ type DBAuthorizationRegistry struct {
 }
 
 const (
+	// expires_at is stored as milliseconds-since-epoch. SQLite INTEGER is a
+	// 64-bit type, but PostgreSQL INTEGER is 32-bit and overflows for current
+	// epoch-ms values — the PG DDL must use BIGINT.
 	relayTicketsDDL = `CREATE TABLE IF NOT EXISTS relay_tickets (
 		uuid TEXT PRIMARY KEY,
 		initiator_id TEXT NOT NULL,
@@ -29,9 +32,20 @@ const (
 		expires_at INTEGER NOT NULL,
 		claims INTEGER NOT NULL DEFAULT 0
 	)`
+	relayTicketsDDLPostgres = `CREATE TABLE IF NOT EXISTS relay_tickets (
+		uuid TEXT PRIMARY KEY,
+		initiator_id TEXT NOT NULL,
+		target_id TEXT NOT NULL,
+		expires_at BIGINT NOT NULL,
+		claims INTEGER NOT NULL DEFAULT 0
+	)`
 	relayTicketUsedDDL = `CREATE TABLE IF NOT EXISTS relay_ticket_used (
 		uuid TEXT PRIMARY KEY,
 		expires_at INTEGER NOT NULL
+	)`
+	relayTicketUsedDDLPostgres = `CREATE TABLE IF NOT EXISTS relay_ticket_used (
+		uuid TEXT PRIMARY KEY,
+		expires_at BIGINT NOT NULL
 	)`
 )
 
@@ -47,9 +61,25 @@ func NewDBAuthorizationRegistry(db *sql.DB) (*DBAuthorizationRegistry, error) {
 		pg:  isPostgresDriver(db),
 		now: time.Now,
 	}
-	for _, stmt := range []string{relayTicketsDDL, relayTicketUsedDDL} {
+	ddls := []string{relayTicketsDDL, relayTicketUsedDDL}
+	if r.pg {
+		ddls = []string{relayTicketsDDLPostgres, relayTicketUsedDDLPostgres}
+	}
+	for _, stmt := range ddls {
 		if _, err := db.Exec(stmt); err != nil {
 			return nil, fmt.Errorf("relay: ticket store migrate: %w", err)
+		}
+	}
+	if r.pg {
+		// Migration for clusters created before the BIGINT fix: widen the
+		// columns in place (idempotent — re-running is a no-op).
+		for _, stmt := range []string{
+			`ALTER TABLE relay_tickets ALTER COLUMN expires_at TYPE BIGINT`,
+			`ALTER TABLE relay_ticket_used ALTER COLUMN expires_at TYPE BIGINT`,
+		} {
+			if _, err := db.Exec(stmt); err != nil {
+				return nil, fmt.Errorf("relay: ticket store column migration: %w", err)
+			}
 		}
 	}
 	return r, nil

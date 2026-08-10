@@ -149,7 +149,8 @@ router.get('/api/panel/scaling/relays', requireAuth, requirePermission('server.c
                 || live.find(x => x.address && x.address.split(':')[0] === String(r.address).split(':')[0]);
             return t
                 ? { ...r, status: t.status, latency_ms: t.latency_ms,
-                    active_sessions: t.active_sessions || 0, total_bytes: t.total_bytes || 0 }
+                    active_sessions: t.active_sessions || 0, total_bytes: t.total_bytes || 0,
+                    cpu: t.cpu || 0, memory: t.memory || 0, bandwidth_mbps: t.bandwidth_mbps || 0 }
                 : r;
         });
         res.json({ data: merged, telemetry: telemetry.success ? telemetry.data : null });

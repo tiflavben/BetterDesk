@@ -15,11 +15,14 @@ import (
 func (s *Server) handleRelayScalingRelays(w http.ResponseWriter, r *http.Request) {
 	relays := s.cfg.GetRelayServers()
 	type relayStatus struct {
-		Address        string `json:"address"`
-		Status         string `json:"status"`
-		LatencyMs      int64  `json:"latency_ms"`
-		ActiveSessions int64  `json:"active_sessions"`
-		TotalBytes     int64  `json:"total_bytes"`
+		Address        string  `json:"address"`
+		Status         string  `json:"status"`
+		LatencyMs      int64   `json:"latency_ms"`
+		ActiveSessions int64   `json:"active_sessions"`
+		TotalBytes     int64   `json:"total_bytes"`
+		CPUPercent     float64 `json:"cpu"`
+		MemPercent     float64 `json:"memory"`
+		BandwidthMbps  float64 `json:"bandwidth_mbps"`
 	}
 	// Per-node heartbeat rows (relay-only nodes upsert every 10s).
 	var heartbeats map[string]db.RelayHeartbeat
@@ -28,7 +31,7 @@ func (s *Server) handleRelayScalingRelays(w http.ResponseWriter, r *http.Request
 			heartbeats = hb
 		}
 	}
-	matchHeartbeat := func(addr string) (int64, int64) {
+	matchHeartbeat := func(addr string) (int64, int64, float64, float64, float64) {
 		ip := addr
 		if h, _, err := net.SplitHostPort(addr); err == nil {
 			ip = h
@@ -39,10 +42,10 @@ func (s *Server) handleRelayScalingRelays(w http.ResponseWriter, r *http.Request
 				hbIP = h
 			}
 			if hbIP == ip {
-				return hb.ActiveSessions, hb.TotalBytes
+				return hb.ActiveSessions, hb.TotalBytes, hb.CPUPercent, hb.MemPercent, hb.BandwidthMbps
 			}
 		}
-		return 0, 0
+		return 0, 0, 0, 0, 0
 	}
 	out := make([]relayStatus, 0, len(relays))
 	for _, addr := range relays {
@@ -56,7 +59,7 @@ func (s *Server) handleRelayScalingRelays(w http.ResponseWriter, r *http.Request
 			rs.Status = "online"
 			rs.LatencyMs = time.Since(start).Milliseconds()
 		}
-		rs.ActiveSessions, rs.TotalBytes = matchHeartbeat(addr)
+		rs.ActiveSessions, rs.TotalBytes, rs.CPUPercent, rs.MemPercent, rs.BandwidthMbps = matchHeartbeat(addr)
 		out = append(out, rs)
 	}
 	if len(out) == 0 {

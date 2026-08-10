@@ -591,6 +591,31 @@ func TestSelectPeerRelayServerUsesLANRelayForPrivateSubnet(t *testing.T) {
 	}
 }
 
+func TestSelectPeerRelayServerKeepsPrivateRelayTierForLANPeers(t *testing.T) {
+	// Split deployment: signal on 192.168.1.101, dedicated relay tier on
+	// 192.168.1.102/103. LAN peers must get the hashed private relay, NOT the
+	// signal server's own IP (which has no relay listener -> connection closed).
+	srv, _ := newTestSignalServer(t, config.EnrollmentModeOpen)
+	srv.localIP.Store("198.51.100.20")
+	srv.lanIP.Store("192.168.1.101")
+
+	relay, sameLAN, samePublic := srv.selectPeerRelayServer(
+		"192.168.1.102:21117", // hashed choice from RELAY_SERVERS
+		udpAddr("192.168.1.16", 51000),
+		udpAddr("192.168.1.16", 52000),
+	)
+
+	if relay != "192.168.1.102:21117" {
+		t.Fatalf("relay = %q, want private relay tier 192.168.1.102:21117 (split deployment)", relay)
+	}
+	if !sameLAN {
+		t.Fatal("private same-subnet peers should be detected as LAN peers")
+	}
+	if samePublic {
+		t.Fatal("private same-subnet peers should not be marked as shared public IP")
+	}
+}
+
 func TestSelectPeerRelayServerKeepsDefaultRelayWhenLANRelayOutsidePeerSubnet(t *testing.T) {
 	srv, _ := newTestSignalServer(t, config.EnrollmentModeOpen)
 	srv.localIP.Store("198.51.100.20")
