@@ -1,7 +1,7 @@
 # BetterDesk 项目状态文档（config.md）
 
 > 本文档供后续开发续接使用。**禁止写入任何凭据**（API key、数据库密码、PAT、SSH 私钥、管理员密码、会话 cookie）——一律以 `[REDACTED]` 表示。
-> 最后更新：2026-08-10（上游合并 + 用户自服务设备管理后）
+> 最后更新：2026-08-10（全面扫描 + 修复 + 加固后）
 
 ---
 
@@ -20,18 +20,29 @@
 
 | 主机 | 角色 | 地址 | systemd 服务 | 端口 |
 |---|---|---|---|---|
-| 101 | 主控（Signal + API + 面板 + PostgreSQL） | 192.168.1.101 | `betterdesk-master.service`、`betterdesk-console.service` | 21114 (API/Signal)、21115 (Signal TCP)、5000 (面板)、5432 (PG) |
+| 101 | 主控（Signal + API + 面板 + PostgreSQL） | 192.168.1.101 | `betterdesk-master.service`、`betterdesk-console.service` | 21114 (API/Signal)、21115 (Signal TCP)、21116–21119、21121 (客户端 API, TLS)、21122、5000 (面板, HTTP→307)、5432 (PG)、5443 (面板 HTTPS) |
 | 102 | Relay 1（relay-only） | 192.168.1.102 | `betterdesk-relay1.service` | 21117 |
 | 103 | Relay 2（relay-only） | 192.168.1.103 | `betterdesk-relay2.service` | 21117 |
 
-- 面板 URL：`http://192.168.1.101:5000`（管理员 `admin`，密码 `[REDACTED]`）
+- 面板 URL：`https://192.168.1.101:5443`（自签名证书，首次访问需手动接受；管理员 `admin`，密码 `[REDACTED]`；`http://192.168.1.101:5000` 自动 307 → 5443）
 - 测试普通用户：`517532265` / `[REDACTED]`（viewer 角色，用于隔离验收；真实业务使用中）
+
+### 环境变化（2026-08-10 加固后）
+
+- **面板/客户端 API 已 HTTPS**：面板 5443、RustDesk 客户端 API 21121 均随 `httpsEnabled` 启用 TLS，自签名证书 2027-08-10 到期需轮换
+- **服务运行用户**：`betterdesk`（nologin；101 uid=999，102/103 uid=988）；三台 unit 均含 `NoNewPrivileges` / `ProtectSystem=strict` / `PrivateTmp` / `ReadWritePaths`
+- **防火墙**：nftables，input policy drop，放行 lo/established/22/21114–21119/21121/21122/5000/5432/5443（源限 192.168.1.0/24）
+- **SSH**：纯密钥认证（`PasswordAuthentication no`）
+- **PostgreSQL**：密码 24 位字母数字（明文仅存在于三台 unit 文件 DSN，`[REDACTED]`）；`archive_mode=on` + WAL 归档至 `/var/lib/postgresql/wal_archive/`
+- **备份**：每日 02:00 crontab 执行 `/usr/local/bin/betterdesk-backup.sh`（`pg_dump -Fc` + 面板数据 tar，14 天保留）；回滚点 `/root/backups/20260810/`
+- **21121 已 TLS 化**：RustDesk 旧客户端明文兼容需 `RUSTDESK_API_DISABLE_TOTP` 类开关或回退（见第 9 节待办）
 
 ### 关键配置（101 主控）
 
 - `RELAY_SERVERS=192.168.1.102:21117,192.168.1.103:21117` —— **必须所有 Signal 实例完全一致且顺序一致**（Relay 哈希分配依赖顺序）
 - `RELAY_TICKET_STORE=db` —— relay-only 必需，共享主控 PostgreSQL 作 ticket store
-- `ENROLLMENT_MODE=open`
+- `ENROLLMENT_MODE=open`（是否改 managed 待用户决策，见第 9 节）
+- `httpsEnabled`（面板 5443 / 客户端 API 21121 的 TLS 开关，自签名证书）
 - Go 服务数据目录：`/etc/betterdesk/`（id_ed25519、.api_key）
 - 面板服务环境：`KEYS_PATH=/etc/betterdesk`、`BETTERDESK_API_URL=http://127.0.0.1:21114/api`、`DATA_DIR=/opt/betterdesk-console/data`
 
@@ -50,13 +61,11 @@
 
 - 工作区：`F:\betterdesk`，分支 `dev`（推送 `fork` = tiflavben/BetterDesk）
 - Remote：`origin` = UNITRONIX/BetterDesk（**上游**，主分支 `dev`）；`fork` = tiflavben/BetterDesk
-- 最近提交链（dev）：
-  - `f4d4e5c` Merge origin/dev（**上游 12 个新提交已合并**：agent Wails UI、fleet org 过滤修复、attestation 对比度、版本 bump 至 3.5.29）
-  - `10cc31d` fix(billing): user-scoped contracts resolved & enforced
-  - `423da9b` style(dashboard): 订阅卡主题色
-  - `ff6192e` feat(dashboard): 我的订阅卡 + 隐藏 UX 3.5 切换
-  - `0550f7f` feat(ui): 管理员/普通用户 UI 隔离
-  - 更早：`2e2fe18` 用户资源管理、`add0c6a`/`d941ca3`/`93beda3`/`c244eff`/`1c4b80c` Relay telemetry 链
+- 最近提交链（dev，HEAD = `cfac560`，2026-08-10 三批提交已推送 fork/dev，远端 SHA 匹配）：
+  - `cfac560` fix(server): TOTP log leak, panic recovery, perms, db dual-backend（11 文件：TOTP 验证码仅记长度/panic recover×3/peers online-policy 权限 + org scope/LIKE 转义/org 角色/TouchAPIKey 同步/PG UpsertPeer 补 3 列/迁移对齐/时间戳格式）
+  - `50dafea` fix(ui): device scope count, fleet CSRF, contract UX（29 文件：effective-scope 双解包/fleet CSRF 头/inventory NaN/负偏移/防重复提交/时区统一/i18n 24 语言补全）
+  - `762f9b9` fix(security): authz hardening + XSS/upload fixes（16 文件：API key 泄露封堵/审计写入认证/设备 delete-ban 权限/系统日志-Docker server.config/票证 IDOR/CDAP 授权/策略越权/toolkit requireAdmin/布局 JSON.stringify XSS/chat 附件/SVG 上传过滤）
+  - 更早：`f4d4e5c` Merge origin/dev（**上游 12 个新提交已合并**：agent Wails UI、fleet org 过滤修复、attestation 对比度、版本 bump 至 3.5.29）、`10cc31d` fix(billing): user-scoped contracts resolved & enforced、`423da9b` style(dashboard)、`ff6192e` feat(dashboard)、`0550f7f` feat(ui): 管理员/普通用户 UI 隔离、`2e2fe18` 用户资源管理、`add0c6a`/`d941ca3`/`93beda3`/`c244eff`/`1c4b80c` Relay telemetry 链
 - **GitHub push 注意事项**：本机 git 全局代理已失效，push 必须
   `env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY git -c http.proxy= -c https.proxy= push https://<token>:<token>@github.com/tiflavben/BetterDesk.git dev`（token 文件 `C:\Users\xoon\rdgen_ghbearer_token.txt`，仅本地，禁入 git/文档）
 - 敏感文件（禁读/禁提交/禁记录内容）：`github_pat.txt`、`F:\betterdesk\bin\` 下构建产物、任何 token/私钥文件
@@ -88,7 +97,7 @@
 ## 6. 用户资源管理（合同模型）
 
 - `billing_contracts`：`target_type`（org/user/device/folder/group）、`target_key`、`quota_bytes`（0=不限）、`used_bytes`、`device_limit`（0=不限）、`valid_from`/`valid_until`、`minutes`、`status`（active/expired/suspended）
-- 用户合同：`target_type='user'`、`target_key=<username>`；**必须引用真实存在的 `billing_packages`**（否则创建 500）
+- 用户合同：`target_type='user'`、`target_key=<username>`；**必须引用真实存在的 `billing_packages`**（否则创建 500；UI 侧已做 package 自动解析，见第 9 节）
 - 解析链（`billing/resolver.go` `ResolveContractForDevice`）：device > folder > device_group > **user** > org
 - 强制点（`billing/service.go` `CheckConnection`）：未开始/过期/suspended/流量耗尽/分钟耗尽/`device_limit_reached`（在线设备数 >= limit）均拒绝
 - 流量计量：relay 双向 `countingConn` 流式累计 → `relay_traffic` 表（relay-only 写 PG）→ 主控 billing 消费 → 合同 `used_bytes`
@@ -108,18 +117,24 @@
 - 用户资源：517532265 合同（限额 3、500MB、2026-09-09）面板显示 ✓；设备绑定后 `device_count` 0→1 ✓
 - UI 隔离：viewer 登录实测（rail 仅仪表板/设置、banned 卡/服务器状态/审计/品牌隐藏、`/inventory` 403）✓
 - 上游合并后：`go test ./...` 全绿、Go/Node 构建通过、已部署三机、面板 API 冒烟 200 ✓
+- **2026-08-10 全面扫描 + 修复 + 加固后**：`go test` 5 包全绿；安全回归 8/8 通过（HTTPS 5443 实测）；合同字段保存回归通过；relay 双节点心跳正常（CPU/RAM 有值）；加固前后对比：防火墙（nftables drop）/SSH（纯密钥）/备份（每日 02:00）/PG 密码（24 位）/服务降权（betterdesk 用户）/HTTPS（5443）✓
 
 ## 9. 进行中 / 待办
 
-- [x] **设备页普通用户显示 0 台**：已修复（deviceGroupService owner 增强 + devices.js 响应结构兼容 + scope 验证），viewer 实测显示 1 台归属设备（ee5f70d）
-- [x] 全面 bug 扫描：已合入（ee5f70d——7 类越权 + XSS + Go 4 修复；remote 渲染 500 修复 d52585c）
-- [ ] **远程桌面已通但 relay 数据通路待配**：`/remote/:id` 查看器已修复（user 变量注入，d52585c）；查看器初始化并尝试连接，但面板 `/ws/relay` WS 代理配置为 `192.168.1.101:21117`（本机无 relay 服务 → ECONNREFUSED）——relay 在 102/103，需将 WS 代理指向真实 relay（RELAY_SERVERS）才能完成实际画面传输
-- [ ] 浏览器级 UI 登录联调（管理员与普通用户双视角完整走查，`http://192.168.1.101:5000`）
-- [ ] 上游合并后需复验：Relay 心跳/流量计量链路、billing E2E（合并可能影响 Go 依赖）
-- [ ] 用户合同创建 UI 应明确要求 package 或自动选择合法 package（避免 500）
-- [ ] 测试用户 517532265 及其合同/package 清理与否待用户确认（真实业务使用中）
-- [ ] LAN 直连流量不经过 relay（RustDesk 架构），不计入合同流量——如需计费需另行设计
-- [ ] `git status` 中 `bin/`、`github_pat.txt` 未跟踪——确认 gitignore 策略
+- [x] **设备页普通用户显示 0 台**：已修复 + 回归（viewer 可见自己设备 1300228927，操作他人设备 486608902 返回 403）
+- [x] **全面 bug 扫描**：5 路并行（安全 12 / 功能 10 / Go 9 / DB 7 / 运维 11），已全部修复（合入 762f9b9 / 50dafea / cfac560）
+- [x] **浏览器级 UI 双视角联调**：HTTPS 5443 实测——安全回归 8/8 通过，viewer 越权访问全 403/401/404；管理员走查通过
+- [x] **用户合同创建 package 自动解析**：已修复并回归（不再因缺 package 报 500）
+- [x] **合同字段保存 Request failed**：PATCH→PUT + panel 前缀修复；浏览器改 4→改 3 回归通过，Go API 双源确认
+- [x] **上游合并后复验**：`go test` 5 包全绿、relay 心跳/流量计量链路正常（见第 8 节）
+- [x] **gitignore 策略**：`bin/`、`github_pat.txt` 已忽略
+- [ ] 远程桌面 relay 数据通路：面板 `/ws/relay` WS 代理需指向真实 relay（102/103）——本轮未处理，仍待验证
+- [ ] 测试用户 517532265 及其合同清理与否待用户确认（真实业务使用中）
+- [ ] LAN 直连流量不经过 relay（RustDesk 架构），不计入合同流量——如需计费需另行设计（架构边界）
+- [ ] **新增**：面板自签名证书 2027-08-10 到期，需轮换
+- [ ] **新增**：21121 TLS 化后 RustDesk 旧客户端明文兼容性实测（`RUSTDESK_API_DISABLE_TOTP` 类开关或回退）
+- [ ] **新增**：`uitest_no_pkg` 合同（2/300MB/2026-12-31）为测试产物，可清理
+- [ ] **新增**：`ENROLLMENT_MODE=open` 待用户决策是否改 `managed`
 
 ## 10. 部署速查
 
@@ -141,8 +156,10 @@ ssh root@192.168.1.101 'systemctl restart betterdesk-console'
 # 部署 Relay（102/103）：构建后 scp 到各 relay 并重启对应服务
 # 验证
 ssh root@192.168.1.101 'systemctl is-active betterdesk-master betterdesk-console'
-curl -s -H "X-API-Key: $(ssh root@192.168.1.101 'cat /etc/betterdesk/.api_key')" http://192.168.1.101:21114/api/users
+curl -s -H "X-API-Key: *** root@192.168.1.101 'cat /etc/betterdesk/.api_key')" http://192.168.1.101:21114/api/users
 ```
+
+> 注：部署后需 `chown betterdesk:betterdesk` 新文件（服务降权运行），详见第 11 节坑 10。
 
 ## 11. 常见坑
 
@@ -154,3 +171,8 @@ curl -s -H "X-API-Key: $(ssh root@192.168.1.101 'cat /etc/betterdesk/.api_key')"
 6. **GitHub push**：本机代理失效，必须 `env -u http_proxy ... git -c http.proxy= -c https.proxy= push` + `https://<token>:<token>@github.com/...` 格式
 7. 本机 `21117` 被用户自启 `bdserver.exe` 占用——本机测试 Relay 会端口冲突（环境问题，非代码 bug）
 8. **连接模式（P2P/仅中继）面板保存禁用**：`serverConnectionConfigService.js` 曾硬编码 `betterdesk-server.service`，fork 部署为 `betterdesk-master.service` → 检测不到 → `writable=false`。已改为候选服务名探测（`resolveSystemdUnit()`）；保存写入 systemd 单元 Environment（`P2P_FIRST`/`ALWAYS_USE_RELAY`/`P2P_FALLBACK_MS`/`SAME_NAT_RELAY`），需 `daemon-reload`+重启 Go 服务生效（面板"保存并重启"按钮处理）
+9. **面板已 HTTPS**：浏览器访问 `https://192.168.1.101:5443`（自签名证书需手动接受）；curl 必须加 `-sk`；HTTP 5000 自动 307 → 5443
+10. **部署后必须 `chown betterdesk:betterdesk`**：服务降权运行（nologin 用户），root 属主的新文件可能读不了/写不进，导致面板或服务异常
+11. **Hermes 终端脱敏陷阱**：服务器命令带 `postgres://` URL 时，Hermes 终端会把密码脱敏成 `***`——判断"密码占位符/连不上库"问题前先做字节级验证（用 Python 直读，或 `wc -c` 长度 + star_count 比对），别把脱敏当真实内容
+12. **三台 unit 有 `ProtectSystem=strict`**：部署文件到 `/opt/betterdesk`、`/opt/betterdesk-console/data`、`/etc/betterdesk` 之外路径会写入失败（ReadOnlyPaths）
+13. **PG 密码在三台 unit DSN（24 位字母数字）**：改密码需三台 unit 同步 + 重启（顺序：先 PG 后服务）；重启后 `journalctl` 确认无 auth failed
