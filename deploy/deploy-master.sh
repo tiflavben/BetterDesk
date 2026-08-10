@@ -42,6 +42,7 @@ Wants=postgresql.service
 [Service]
 Type=simple
 User=root
+WorkingDirectory=/opt/betterdesk
 Environment=RELAY_SERVERS=${RELAY1_ADDR},${RELAY2_ADDR}
 Environment=RELAY_TICKET_STORE=db
 Environment=ENROLLMENT_MODE=open

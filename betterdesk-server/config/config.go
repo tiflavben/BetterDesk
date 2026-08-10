@@ -150,6 +150,7 @@ type Config struct {
 	MeshWebCertFile    string // MESH_WEB_CERT_FILE public TLS cert agents see (proxy LE); overrides TLS_CERT for webHash
 	MeshAssetsDir      string // optional override for meshcore assets
 	MeshRateLimit      int    // WS upgrade rate limit per IP per minute
+	RecordingDir       string // MESH_RECORDINGS_DIR base directory for mesh session recordings
 
 	// Time sync / billing (commercialization module)
 	NTPServers                string // Comma-separated NTP servers
@@ -458,6 +459,9 @@ func (c *Config) LoadEnv() {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.MeshRateLimit = n
 		}
+	}
+	if v := os.Getenv("MESH_RECORDINGS_DIR"); v != "" {
+		c.RecordingDir = v
 	}
 	if v := os.Getenv("NTP_SERVERS"); v != "" {
 		c.NTPServers = v

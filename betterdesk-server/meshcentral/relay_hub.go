@@ -3,7 +3,6 @@ package meshcentral
 import (
 	"context"
 	"log"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,19 +13,19 @@ import (
 
 // relayHub multiplexes one mesh agent tunnel to multiple browser viewers (KVM p=2).
 type relayHub struct {
-	gateway   *Gateway
-	relayID   string
-	proto     string
-	mu        sync.Mutex
-	agent     *relayPeer
-	viewers   []*relayPeer
-	recorder  *relayRecorder
-	recPath   string
-	auditUser string
-	auditPeer string
+	gateway     *Gateway
+	relayID     string
+	proto       string
+	mu          sync.Mutex
+	agent       *relayPeer
+	viewers     []*relayPeer
+	recorder    *relayRecorder
+	recPath     string
+	auditUser   string
+	auditPeer   string
 	sessionType string
-	started   bool
-	done      atomic.Bool
+	started     bool
+	done        atomic.Bool
 }
 
 func (g *Gateway) runKvmRelayHub(ctx context.Context, relayID string, peer *relayPeer, proto string) {
@@ -118,7 +117,10 @@ func (h *relayHub) startPiping(ctx context.Context) {
 			h.sessionType = meta.SessionType
 		}
 		if recording && h.gateway.cfg != nil {
-			dataDir := filepath.Dir(h.gateway.cfg.DBPath)
+			dataDir := h.gateway.cfg.RecordingDir
+			if dataDir == "" {
+				dataDir = recordingsBaseDir(h.gateway.cfg.DBPath)
+			}
 			if dataDir == "" || dataDir == "." {
 				dataDir = "."
 			}

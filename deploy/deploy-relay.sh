@@ -24,6 +24,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
+WorkingDirectory=/opt/betterdesk
 Environment=RELAY_TICKET_STORE=db
 ExecStart=/opt/betterdesk/betterdesk-server -mode relay \\
   -db "postgres://betterdesk:${PG_PASSWORD}@${MASTER_IP}:5432/betterdesk?sslmode=disable" \\

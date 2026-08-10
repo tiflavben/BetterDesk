@@ -342,6 +342,15 @@ func (s *Server) handleRegisterPeer(msg *pb.RegisterPeer, raddr *net.UDPAddr) {
 			return
 		}
 
+		// Reject heartbeats whose source IP differs from the registered address.
+		// Only the host part is compared — port changes (NAT rebinding) are allowed.
+		// Prevents a malicious client from hijacking a peer's UDP address (DoS /
+		// metadata / relay UUID disclosure via UDPAddr redirection).
+		if existing.IP != "" && hostFromAddrString(existing.IP) != raddr.IP.String() {
+			log.Printf("[signal] heartbeat source IP mismatch for peer %s: %s -> %s (rejected)", id, existing.IP, raddr.String())
+			return
+		}
+
 		// Update heartbeat
 		s.peers.UpdateHeartbeat(id, raddr, msg.Serial)
 

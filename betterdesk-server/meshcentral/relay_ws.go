@@ -5,7 +5,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -155,7 +154,10 @@ func (g *Gateway) pairRelay(ctx context.Context, relayID string, peer *relayPeer
 
 	var recorder *relayRecorder
 	if recording && meta != nil && g.cfg != nil {
-		dataDir := filepath.Dir(g.cfg.DBPath)
+		dataDir := g.cfg.RecordingDir
+		if dataDir == "" {
+			dataDir = recordingsBaseDir(g.cfg.DBPath)
+		}
 		if dataDir == "" || dataDir == "." {
 			dataDir = "."
 		}

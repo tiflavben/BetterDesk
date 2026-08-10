@@ -454,7 +454,13 @@ func usernameFromRequest(r *http.Request) string {
 }
 
 func (s *Server) meshDataDir() string {
-	if s.cfg != nil && s.cfg.DBPath != "" {
+	if s.cfg != nil && s.cfg.RecordingDir != "" {
+		return s.cfg.RecordingDir
+	}
+	if s.cfg != nil && strings.HasPrefix(s.cfg.DBPath, "postgres://") {
+		return "/var/lib/betterdesk"
+	}
+	if s.cfg != nil {
 		dir := filepath.Dir(s.cfg.DBPath)
 		if dir != "" && dir != "." {
 			return dir

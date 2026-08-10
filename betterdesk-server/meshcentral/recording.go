@@ -41,6 +41,22 @@ type relayRecorder struct {
 	mu   sync.Mutex
 }
 
+// recordingsBaseDir returns the base directory under which mesh session
+// recordings are stored (<dir>/mesh-recordings). When DBPath is a
+// PostgreSQL DSN, filepath.Dir() yields "." (the process working
+// directory), which under systemd resolves to / and fails to write under
+// ProtectSystem=strict; fall back to a fixed absolute directory.
+func recordingsBaseDir(dbPath string) string {
+	if strings.HasPrefix(dbPath, "postgres://") {
+		return "/var/lib/betterdesk"
+	}
+	dir := filepath.Dir(dbPath)
+	if dir == "" || dir == "." {
+		return "."
+	}
+	return dir
+}
+
 func openRelayRecorder(dataDir, peerID, relayID, sessionType string) (*relayRecorder, string, error) {
 	dir := filepath.Join(dataDir, "mesh-recordings")
 	if err := os.MkdirAll(dir, 0750); err != nil {

@@ -643,6 +643,19 @@ func (pg *PostgresDB) Migrate() error {
 				-- Column doesn't exist yet, skip index creation silently
 				NULL;
 			END $$`,
+		// "user" index — check column exists before creating (legacy DBs; "user" is a reserved word)
+		`DO $$
+			BEGIN
+				IF EXISTS (
+					SELECT 1 FROM information_schema.columns
+					WHERE table_schema = current_schema() AND table_name = 'peers' AND column_name = 'user'
+				) THEN
+					CREATE INDEX IF NOT EXISTS idx_peers_user ON peers("user") WHERE "user" != '';
+				END IF;
+			EXCEPTION WHEN undefined_column THEN
+				-- Column doesn't exist yet, skip index creation silently
+				NULL;
+			END $$`,
 	}
 	for _, idx := range deferredIndexes {
 		if _, err := pg.pool.Exec(pg.ctx, idx); err != nil {

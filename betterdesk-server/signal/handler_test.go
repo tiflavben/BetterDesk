@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"log"
 	"net"
 	"path/filepath"
 	"strings"
@@ -1521,5 +1522,55 @@ func TestBannedTokenInitiatorRevokesSessionAndRelayTickets(t *testing.T) {
 	}
 	if relay.AuthorizeRelayPair(relayUUID, "TOKBAN1", "TGTBAN1") {
 		t.Fatal("banned peer relay ticket must remain revoked")
+	}
+}
+
+func TestHeartbeatRejectsSourceIPChange(t *testing.T) {
+	srv, _ := newTestSignalServer(t, config.EnrollmentModeOpen)
+
+	// handleRegisterPeer replies over UDP — give the server a real socket so
+	// sendUDP does not hit a nil conn.
+	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
+	if err != nil {
+		t.Fatalf("ListenUDP: %v", err)
+	}
+	t.Cleanup(func() { udpConn.Close() })
+	srv.udpConn = udpConn
+
+	// Capture signal logs to assert the rejection warning.
+	var logBuf bytes.Buffer
+	prevOutput := log.Writer()
+	log.SetOutput(&logBuf)
+	t.Cleanup(func() { log.SetOutput(prevOutput) })
+
+	// 1. First registration from 10.0.0.1:5000.
+	srv.handleRegisterPeer(&pb.RegisterPeer{Id: "SRCIP1", Serial: 1}, udpAddr("10.0.0.1", 5000))
+	entry := srv.peers.Get("SRCIP1")
+	if entry == nil {
+		t.Fatal("peer SRCIP1 should be registered after first heartbeat")
+	}
+	if entry.IP != "10.0.0.1:5000" {
+		t.Fatalf("initial IP = %q, want %q", entry.IP, "10.0.0.1:5000")
+	}
+
+	// 2. Same source IP, new port — address must still update (port change allowed).
+	srv.handleRegisterPeer(&pb.RegisterPeer{Id: "SRCIP1", Serial: 2}, udpAddr("10.0.0.1", 6000))
+	entry = srv.peers.Get("SRCIP1")
+	if entry.IP != "10.0.0.1:6000" {
+		t.Fatalf("same-IP heartbeat with new port should update address, got %q", entry.IP)
+	}
+
+	// 3. Different source IP — must be rejected: address stays unchanged.
+	logBuf.Reset()
+	srv.handleRegisterPeer(&pb.RegisterPeer{Id: "SRCIP1", Serial: 3}, udpAddr("10.0.0.2", 5000))
+	entry = srv.peers.Get("SRCIP1")
+	if entry.IP != "10.0.0.1:6000" {
+		t.Fatalf("heartbeat from changed source IP must not update address, got %q", entry.IP)
+	}
+	if entry.UDPAddr == nil || entry.UDPAddr.IP.String() != "10.0.0.1" {
+		t.Fatalf("UDPAddr must stay on original source IP, got %v", entry.UDPAddr)
+	}
+	if !strings.Contains(logBuf.String(), "rejected") {
+		t.Fatalf("expected rejection warning containing 'rejected' in log, got: %s", logBuf.String())
 	}
 }
