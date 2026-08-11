@@ -62,6 +62,21 @@ async function identifyDevice(req, res, next) {
     }
     const deviceId = req.headers['x-device-id'];
     if (deviceId && /^[A-Za-z0-9_-]{3,64}$/.test(deviceId)) {
+        // P1: the header alone is spoofable — require the device to actually
+        // exist (as a peer or as an approved registration) before trusting it.
+        // typeof guards keep minimal test doubles working; the production
+        // database module always defines both lookups.
+        if (typeof db.getPeerById === 'function' && typeof db.getPendingRegistrationByDeviceId === 'function') {
+            try {
+                const peer = await db.getPeerById(deviceId);
+                const reg = await db.getPendingRegistrationByDeviceId(deviceId);
+                if (!peer && !(reg && reg.status === 'approved')) {
+                    return res.status(401).json({ error: 'Unknown device' });
+                }
+            } catch (_) {
+                return res.status(401).json({ error: 'Unknown device' });
+            }
+        }
         req.deviceId = deviceId;
         return next();
     }
@@ -191,9 +206,16 @@ router.get('/api/panel/policies/:orgId/audit', requireAuth, requireAdmin, (req, 
 // ---------------------------------------------------------------------------
 
 router.get('/api/bd/device-policy', identifyDevice, async (req, res) => {
-    const rawDeviceId = req.query.device_id || req.headers['x-device-id'];
+    // P1: identifyDevice binding (Bearer token client_id or X-Device-Id header)
+    // takes priority over the query param — a device must not be able to fetch
+    // another device's policy by passing a different device_id.
+    const rawDeviceId = req.deviceId || req.query.device_id;
     if (!rawDeviceId) {
         return res.status(400).json({ error: 'device_id required' });
+    }
+    // Token path: refuse querying another device's policy under this token.
+    if (req.deviceToken && req.query.device_id && req.query.device_id !== req.deviceId) {
+        return res.status(403).json({ error: 'device_id mismatch' });
     }
     let deviceId;
     try {

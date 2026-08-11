@@ -224,10 +224,40 @@ router.post('/api/bd/enroll', async (req, res) => {
         if (!token || !deviceId) {
             return res.status(400).json({ success: false, error: 'missing_fields' });
         }
-        const row = db.get
-            ? await db.get('SELECT id, name, config_json FROM agent_templates WHERE enrollment_token = ?', [token])
-            : null;
+
+        // The agent_templates table lives on the auth DB handle (see
+        // ensureTemplatesTable). Prefer the synchronous better-sqlite3 path;
+        // keep the legacy db.get/db.run fallback for other backends.
+        const { getAuthDb } = require('../services/database');
+        const auth = (typeof getAuthDb === 'function') ? getAuthDb() : null;
+
+        let row = null;
+        if (auth && typeof auth.prepare === 'function') {
+            row = auth.prepare('SELECT id, name, config_json, enrollment_token FROM agent_templates WHERE enrollment_token = ?').get(token) || null;
+        } else if (db.get) {
+            row = await db.get('SELECT id, name, config_json, enrollment_token FROM agent_templates WHERE enrollment_token = ?', [token]) || null;
+        }
         if (!row) return res.status(401).json({ success: false, error: 'invalid_token' });
+
+        // One-use token: consume it atomically BEFORE returning the config.
+        // The token column is NOT NULL UNIQUE with no used/status column, so
+        // "used" is recorded by rotating the value to a random used- marker.
+        // The WHERE enrollment_token = ? clause wins the race between two
+        // concurrent enrolls with the same token (second one matches 0 rows).
+        let consumed = false;
+        if (auth && typeof auth.prepare === 'function') {
+            const r = auth.prepare(
+                "UPDATE agent_templates SET enrollment_token = 'used-' || lower(hex(randomblob(16))), updated_at = datetime('now') WHERE id = ? AND enrollment_token = ?"
+            ).run(row.id, token);
+            consumed = r.changes > 0;
+        } else if (db.run) {
+            await db.run(
+                "UPDATE agent_templates SET enrollment_token = ? WHERE id = ? AND enrollment_token = ?",
+                ['used-' + crypto.randomBytes(16).toString('hex'), row.id, token]
+            );
+            consumed = true; // generic backend: best-effort
+        }
+        if (!consumed) return res.status(401).json({ success: false, error: 'invalid_token' });
 
         let config = {};
         try { config = JSON.parse(row.config_json || '{}'); } catch (_) {}

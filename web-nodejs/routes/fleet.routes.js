@@ -5,6 +5,7 @@ const router = express.Router();
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { apiClient } = require('../services/betterdeskApi');
 const { proxyToGo, safeSegment, assertSafeApiId } = require('../lib/goApiProxy');
+const db = require('../services/database');
 
 // ---------------------------------------------------------------------------
 // Page routes
@@ -157,14 +158,56 @@ router.post('/api/panel/fleet/compliance/:deviceId/remediate', requireAuth, requ
 });
 
 // ---------------------------------------------------------------------------
+// Device-facing auth (local copy of the identifyDevice pattern used across
+// /api/bd route files — no shared export exists yet).
+// ---------------------------------------------------------------------------
+
+function extractBearerToken(req) {
+    const auth = req.headers['authorization'] || '';
+    if (!auth.startsWith('Bearer ')) return null;
+    return auth.substring(7).trim();
+}
+
+/** Lightweight device auth — bearer token OR X-Device-Id header. Sets req.deviceId. */
+async function identifyDevice(req, res, next) {
+    const token = extractBearerToken(req);
+    if (token) {
+        try {
+            const tokenRow = await db.getAccessToken(token);
+            if (tokenRow) {
+                req.deviceId = tokenRow.client_id || null;
+                req.deviceToken = tokenRow;
+                await db.touchAccessToken(token);
+                return next();
+            }
+        } catch (_) { /* ignored */ }
+    }
+    const deviceId = req.headers['x-device-id'];
+    if (deviceId && /^[A-Za-z0-9_-]{3,64}$/.test(deviceId)) {
+        req.deviceId = deviceId;
+        return next();
+    }
+    return res.status(401).json({ error: 'Missing device identification' });
+}
+
+/** Reject requests whose body claims a different device than the authenticated one. */
+function assertBodyDeviceId(req, res, next) {
+    const claimed = req.body && req.body.device_id;
+    if (claimed !== undefined && String(claimed) !== req.deviceId) {
+        return res.status(403).json({ error: 'device_id mismatch' });
+    }
+    next();
+}
+
+// ---------------------------------------------------------------------------
 // Device-facing API (agents report back — body JSON, unchanged for compatibility)
 // ---------------------------------------------------------------------------
 
-router.post('/api/bd/fleet/task-result', (req, res) => {
+router.post('/api/bd/fleet/task-result', identifyDevice, assertBodyDeviceId, (req, res) => {
     proxyToGo(apiClient, req, res, 'POST', '/fleet/task-result', req.body);
 });
 
-router.post('/api/bd/fleet/software', (req, res) => {
+router.post('/api/bd/fleet/software', identifyDevice, assertBodyDeviceId, (req, res) => {
     proxyToGo(apiClient, req, res, 'POST', '/fleet/software', req.body);
 });
 

@@ -218,9 +218,24 @@ async function identifyDevice(req, res, next) {
             }
         } catch (_) {}
     }
-    // Fallback: X-Device-Id header (for registration before login)
+    // Fallback: X-Device-Id header (for registration before login).
+    // P1: the header alone is spoofable — require the device to actually exist
+    // (as a peer or as an approved registration) before trusting it.
     const deviceId = req.headers['x-device-id'];
     if (deviceId && /^[A-Za-z0-9_-]{3,64}$/.test(deviceId)) {
+        // typeof guards keep minimal test doubles working; the production
+        // database module always defines both lookups.
+        if (typeof db.getPeerById === 'function' && typeof db.getPendingRegistrationByDeviceId === 'function') {
+            try {
+                const peer = await db.getPeerById(deviceId);
+                const reg = await db.getPendingRegistrationByDeviceId(deviceId);
+                if (!peer && !(reg && reg.status === 'approved')) {
+                    return res.status(401).json({ error: 'Unknown device' });
+                }
+            } catch (_) {
+                return res.status(401).json({ error: 'Unknown device' });
+            }
+        }
         req.deviceId = deviceId;
         return next();
     }
@@ -236,9 +251,15 @@ router.post('/register', identifyDevice, async (req, res) => {
         const ip = getClientIp(req);
         const { device_id, uuid, hostname, platform, version, public_key } = req.body;
 
-        const id = device_id || req.deviceId;
+        // P1: identify binding (token client_id / X-Device-Id) takes priority;
+        // the body value is only a fallback.
+        const id = req.deviceId || device_id;
         if (!id) {
             return res.status(400).json({ error: 'device_id is required' });
+        }
+        // Token-bound identity must match the claimed device in the body.
+        if (req.deviceToken && device_id && device_id !== req.deviceId) {
+            return res.status(400).json({ error: 'device_id mismatch' });
         }
 
         let effectiveId = id;
@@ -716,8 +737,18 @@ router.post('/operator/login', async (req, res) => {
             return res.status(403).json({ error: 'Insufficient permissions. Admin or operator role required.' });
         }
 
-        // Issue access token
+        // Clear brute-force lockout on successful password auth (mirrors the
+        // main login flow in auth.routes.js before its totpRequired branch).
         authService.recordAttempt(username, ip, true);
+
+        // P1: TOTP-enforced accounts must complete 2FA through the main login
+        // flow (POST /api/auth/totp/verify). Never issue a device access token
+        // on password alone — that would bypass TOTP.
+        if (user.totpRequired) {
+            return res.status(403).json({ error: 'TOTP required', code: 'totp_required' });
+        }
+
+        // Issue access token
         const token = await authService.generateAccessToken(
             user.id,
             String(device_id || '').substring(0, 32),

@@ -16,6 +16,12 @@ const { requireAuth, requirePermission } = require('../middleware/auth');
 // File upload config — max 50MB, store in data/chat-files/
 const UPLOAD_DIR = path.join(__dirname, '..', 'data', 'chat-files');
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_USER_QUOTA_BYTES = 100 * 1024 * 1024; // 100MB per user (cumulative, in-memory)
+// In-memory per-user upload accounting. Minimal viable quota: no chat-upload
+// table exists in the DB, so we track bytes per user in this process only.
+// Note: quota resets on server restart and is per-node-process; a persistent
+// quota would require a DB table (future work).
+const userUploadBytes = new Map(); // userId -> total bytes uploaded
 
 if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -52,6 +58,14 @@ router.post('/api/chat/upload', requireAuth, upload.single('file'), (req, res) =
     if (!req.file) {
         return res.status(400).json({ success: false, error: 'No file provided' });
     }
+    const uid = String(req.session?.userId ?? req.session?.user?.id ?? req.ip);
+    const used = userUploadBytes.get(uid) || 0;
+    if (used + req.file.size > MAX_USER_QUOTA_BYTES) {
+        // Quota exceeded — remove the already-written file and reject.
+        try { fs.unlinkSync(req.file.path); } catch (_) { /* best-effort cleanup */ }
+        return res.status(413).json({ success: false, error: 'upload_quota_exceeded' });
+    }
+    userUploadBytes.set(uid, used + req.file.size);
     const fileId = path.basename(req.file.filename, path.extname(req.file.filename));
     res.json({
         success: true,

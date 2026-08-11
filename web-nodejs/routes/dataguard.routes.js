@@ -36,16 +36,37 @@ const { requireAuth, requirePermission } = require('../middleware/auth');
 //  Auth middleware helpers
 // ---------------------------------------------------------------------------
 
-/** Accept device auth via X-Device-Id header or bearer token. */
-function acceptDeviceAuth(req, res, next) {
+/**
+ * Strict device auth — bearer access token OR X-Device-Id header.
+ * No session fallback (endpoints are under the CSRF-exempt /api/bd prefix).
+ * Sets req.deviceId from the token's client_id or the validated header.
+ */
+function extractBearerToken(req) {
+    const auth = req.headers['authorization'] || '';
+    if (!auth.startsWith('Bearer ')) return null;
+    return auth.substring(7).trim();
+}
+
+async function identifyDevice(req, res, next) {
+    const token = extractBearerToken(req);
+    if (token) {
+        try {
+            const db = getAdapter();
+            const tokenRow = await db.getAccessToken(token);
+            if (tokenRow) {
+                req.deviceId = tokenRow.client_id || null;
+                req.deviceToken = tokenRow;
+                await db.touchAccessToken(token);
+                return next();
+            }
+        } catch (_) { /* ignored */ }
+    }
     const deviceId = req.headers['x-device-id'];
-    if (deviceId) {
+    if (deviceId && /^[A-Za-z0-9_-]{3,64}$/.test(deviceId)) {
         req.deviceId = deviceId;
         return next();
     }
-    // Fallback: session-based for testing from web console
-    if (req.session && req.session.user) return next();
-    return res.status(401).json({ error: 'Device authentication required' });
+    return res.status(401).json({ error: 'Missing device identification' });
 }
 
 // =========================================================================
@@ -209,7 +230,7 @@ router.get('/stats', requireAuth, requirePermission('audit.view'), async (req, r
  * Returns only enabled policies for the requesting agent.
  * Mounted under /api/bd so full path is /api/bd/dlp-policies
  */
-router.get('/dlp-policies', acceptDeviceAuth, async (req, res) => {
+router.get('/dlp-policies', identifyDevice, async (req, res) => {
     try {
         const db = getAdapter();
         const policies = await db.getDlpPolicies();
@@ -217,6 +238,13 @@ router.get('/dlp-policies', acceptDeviceAuth, async (req, res) => {
             .filter(p => {
                 const enabled = typeof p.enabled === 'number' ? p.enabled === 1 : !!p.enabled;
                 return enabled;
+            })
+            .filter(p => {
+                // Device-scope filter: empty scope = global policy; otherwise the
+                // comma-separated scope list must contain 'all' or this device.
+                const scopes = String(p.scope || '').split(',').map(s => s.trim()).filter(Boolean);
+                if (scopes.length === 0) return true;
+                return scopes.includes('all') || scopes.includes(req.deviceId);
             })
             .map(p => ({
                 id: p.id,
@@ -235,10 +263,17 @@ router.get('/dlp-policies', acceptDeviceAuth, async (req, res) => {
  * Body: { event_source, event_type, policy_id?, policy_name?, action?, details? }
  * Mounted under /api/bd so full path is /api/bd/dlp-events
  */
-router.post('/dlp-events', acceptDeviceAuth, async (req, res) => {
+router.post('/dlp-events', identifyDevice, async (req, res) => {
     try {
-        const deviceId = req.deviceId || (req.session && req.session.user && req.session.user.username) || 'unknown';
-        const { event_source, event_type, policy_id, policy_name, action, details } = req.body;
+        const deviceId = req.deviceId;
+        if (!deviceId) return res.status(401).json({ error: 'Missing device identification' });
+
+        // Anti-spoofing: a device may only report events for its own id.
+        if (req.body && req.body.device_id !== undefined && String(req.body.device_id) !== deviceId) {
+            return res.status(403).json({ error: 'device_id mismatch' });
+        }
+
+        const { event_source, event_type, policy_id, policy_name, action, details } = req.body || {};
 
         if (!event_source || typeof event_source !== 'string') {
             return res.status(400).json({ error: 'event_source is required (usb | file)' });

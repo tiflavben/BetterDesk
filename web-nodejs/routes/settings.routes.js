@@ -29,7 +29,7 @@ const rustDeskPublicEndpoints = require('../services/rustDeskPublicEndpointsServ
 const clientConfigHost = require('../services/clientConfigHost');
 const { getSmtpSettings, putSmtpSettings, testSmtpSettings } = require('../lib/smtpSettingsHandlers');
 const { apiClient } = require('../services/betterdeskApi');
-const { requireAuth, requirePermission, roleHasPermission } = require('../middleware/auth');
+const { requireAuth, requirePermission, roleHasPermission, requireAdmin } = require('../middleware/auth');
 const deviceGroupService = require('../services/deviceGroupService');
 const os = require('os');
 const multer = require('multer');
@@ -174,7 +174,7 @@ router.post('/api/settings/device-scope', requireAuth, requirePermission('server
 /**
  * GET /api/settings/audit - Get audit log
  */
-router.get('/api/settings/audit', requireAuth, async (req, res) => {
+router.get('/api/settings/audit', requireAuth, requireAdmin, async (req, res) => {
     try {
         const limit = parseInt(req.query.limit, 10) || 100;
         const logs = await db.getAuditLogs(limit);
@@ -265,19 +265,32 @@ router.post('/api/settings/branding', requireAuth, requirePermission('branding.e
 const UPLOADS_DIR = path.join(config.dataDir || path.join(__dirname, '..', 'data'), 'uploads');
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
+// Branding upload security: extension whitelist + server-side extension map.
+// The stored file extension is ALWAYS derived from the mimetype map below,
+// never from the client-controlled originalname, so the /uploads static
+// handler (express.static) serves the file with an image/* Content-Type.
+const BRANDING_ALLOWED_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+const BRANDING_EXT_BY_MIME = {
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+};
+
 const logoUpload = multer({
     storage: multer.diskStorage({
         destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
         filename: (_req, file, cb) => {
-            const ext = path.extname(file.originalname).toLowerCase() || '.png';
+            // Extension is server-derived from mimetype — originalname is ignored.
+            const ext = BRANDING_EXT_BY_MIME[file.mimetype] || '.png';
             const hash = crypto.randomBytes(8).toString('hex');
             cb(null, `logo-${hash}${ext}`);
         }
     }),
     limits: { fileSize: 2 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
-        const allowed = /^image\/(png|jpeg|gif|webp)$/;
-        if (allowed.test(file.mimetype)) {
+        const ext = path.extname(file.originalname || '').toLowerCase();
+        if (BRANDING_ALLOWED_EXT.has(ext) && BRANDING_EXT_BY_MIME[file.mimetype]) {
             cb(null, true);
         } else {
             cb(new Error('Invalid file type'));
@@ -334,15 +347,16 @@ const bgUpload = multer({
     storage: multer.diskStorage({
         destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
         filename: (_req, file, cb) => {
-            const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+            // Extension is server-derived from mimetype — originalname is ignored.
+            const ext = BRANDING_EXT_BY_MIME[file.mimetype] || '.jpg';
             const hash = crypto.randomBytes(8).toString('hex');
             cb(null, `bg-${hash}${ext}`);
         }
     }),
     limits: { fileSize: 8 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
-        const allowed = /^image\/(png|jpeg|gif|webp)$/;
-        if (allowed.test(file.mimetype)) {
+        const ext = path.extname(file.originalname || '').toLowerCase();
+        if (BRANDING_ALLOWED_EXT.has(ext) && BRANDING_EXT_BY_MIME[file.mimetype]) {
             cb(null, true);
         } else {
             cb(new Error('Invalid file type'));

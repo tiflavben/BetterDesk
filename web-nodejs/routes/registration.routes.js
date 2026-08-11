@@ -55,6 +55,8 @@ function getClientIp(req) {
         || 'unknown';
 }
 
+const DEVICE_ID_RE = /^[A-Za-z0-9_-]{3,64}$/;
+
 /**
  * Read the server public key (validated file, then live Go key).
  */
@@ -102,14 +104,36 @@ router.post('/register-request', async (req, res) => {
     try {
         const { device_id, hostname, platform, version, public_key, uuid } = req.body || {};
 
-        if (!device_id || typeof device_id !== 'string' || device_id.length < 3) {
+        const devId = String(device_id || '').trim();
+        // Charset/length validation: [A-Za-z0-9_-]{3,64} — matches the device
+        // id validation used by identifyDevice on the other /api/bd endpoints.
+        if (!DEVICE_ID_RE.test(devId)) {
             return res.status(400).json({ success: false, error: 'Invalid device_id' });
+        }
+
+        // Anti-overwrite: finalized (approved/rejected) records can never be
+        // rewritten by a re-submission; a pending record may only be updated by
+        // the same device identity (matching uuid) — otherwise an attacker
+        // could hijack another device's pending request (public_key swap) or
+        // drag a rejected record back into the pending queue.
+        const existing = await db.getPendingRegistrationByDeviceId(devId);
+        if (existing) {
+            if (existing.status === 'rejected' || existing.status === 'approved') {
+                return res.status(409).json({ success: false, error: 'registration_finalized' });
+            }
+            if (existing.status === 'pending') {
+                const reqUuid = String(uuid || '').trim();
+                const existingUuid = String(existing.uuid || '').trim();
+                if (existingUuid !== reqUuid) {
+                    return res.status(409).json({ success: false, error: 'registration_pending_conflict' });
+                }
+            }
         }
 
         const ipAddress = getClientIp(req);
 
         const registration = await db.createPendingRegistration({
-            device_id: device_id.trim(),
+            device_id: devId,
             hostname: (hostname || '').substring(0, 255),
             platform: (platform || '').substring(0, 64),
             version: (version || '').substring(0, 32),
@@ -160,7 +184,13 @@ router.get('/register-status', async (req, res) => {
                 console_url: reg.console_url || '',
                 server_address: reg.server_address || '',
                 server_key: reg.server_key || '',
-                access_token: reg.access_token || '',
+                // SECURITY (P0): access_token is deliberately NOT returned here.
+                // This endpoint is anonymous and device IDs are enumerable —
+                // returning the 64-hex device credential would let anyone
+                // impersonate an approved device. The token is only issued via
+                // the createAccessToken / register-request flow.
+                // TODO: implement one-time claim — null out access_token after
+                // the first successful poll (requires a dbAdapter clear method).
             };
         }
 
