@@ -189,9 +189,19 @@ router.get('/register-status', async (req, res) => {
                 // returning the 64-hex device credential would let anyone
                 // impersonate an approved device. The token is only issued via
                 // the createAccessToken / register-request flow.
-                // TODO: implement one-time claim — null out access_token after
-                // the first successful poll (requires a dbAdapter clear method).
             };
+            // One-time claim: consume the stored device access_token on the
+            // first poll that delivers config. The null-out runs AFTER the
+            // response is flushed so the first poll always succeeds; later
+            // polls still return config (status stays 'approved') but the
+            // stored credential is gone and can no longer be enumerated.
+            if (reg.access_token) {
+                const claimedId = reg.id;
+                res.on('finish', () => {
+                    db.markRegistrationTokenClaimed(claimedId)
+                        .catch((err) => console.error('Mark registration token claimed error:', err.message));
+                });
+            }
         }
 
         if (reg.status === 'rejected') {

@@ -203,6 +203,7 @@ const facade = {
     createPendingRegistration:      (data) => adapter.createPendingRegistration(data),
     approvePendingRegistration:     (id, approvedBy, cfg) => adapter.approvePendingRegistration(id, approvedBy, cfg),
     rejectPendingRegistration:      (id, reason) => adapter.rejectPendingRegistration(id, reason),
+    markRegistrationTokenClaimed:   (id) => adapter.markRegistrationTokenClaimed(id),
     deletePendingRegistration:      (id) => adapter.deletePendingRegistration(id),
     getPendingRegistrationCount:    () => adapter.getPendingRegistrationCount(),
 

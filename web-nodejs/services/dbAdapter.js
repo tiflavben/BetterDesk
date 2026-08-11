@@ -2808,6 +2808,12 @@ function createSqliteAdapter(config) {
             return db.prepare('SELECT * FROM pending_registrations WHERE id = ?').get(id) || null;
         },
 
+        async markRegistrationTokenClaimed(id) {
+            const db = openMain();
+            const r = db.prepare("UPDATE pending_registrations SET access_token = NULL, updated_at = datetime('now') WHERE id = ? AND access_token IS NOT NULL").run(id);
+            return r.changes > 0;
+        },
+
         async deletePendingRegistration(id) {
             const r = openMain().prepare('DELETE FROM pending_registrations WHERE id = ?').run(id);
             return r.changes > 0;
@@ -6132,6 +6138,11 @@ function createPostgresAdapter() {
                 WHERE id = $2 AND status = 'pending'
                 RETURNING *
             `, [reason, id]);
+        },
+
+        async markRegistrationTokenClaimed(id) {
+            const row = await one("UPDATE pending_registrations SET access_token = NULL, updated_at = NOW() WHERE id = $1 AND access_token IS NOT NULL RETURNING id", [id]);
+            return !!row;
         },
 
         async deletePendingRegistration(id) {

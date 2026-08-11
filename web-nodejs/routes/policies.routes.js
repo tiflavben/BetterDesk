@@ -36,52 +36,7 @@ const { apiClient } = require('../services/betterdeskApi');
 const { assertSafeApiId } = require('../lib/goApiPath');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const db = require('../services/database');
-
-function extractBearerToken(req) {
-    const auth = req.headers['authorization'];
-    if (!auth || !auth.startsWith('Bearer ')) return null;
-    return auth.substring(7).trim();
-}
-
-/**
- * Identify the reporting device: valid Bearer access token (sets req.deviceId
- * from the token's client_id) or X-Device-Id header fallback. 401 if neither.
- */
-async function identifyDevice(req, res, next) {
-    const token = extractBearerToken(req);
-    if (token) {
-        try {
-            const tokenRow = await db.getAccessToken(token);
-            if (tokenRow) {
-                req.deviceId = tokenRow.client_id || null;
-                req.deviceToken = tokenRow;
-                await db.touchAccessToken(token);
-                return next();
-            }
-        } catch (_) {}
-    }
-    const deviceId = req.headers['x-device-id'];
-    if (deviceId && /^[A-Za-z0-9_-]{3,64}$/.test(deviceId)) {
-        // P1: the header alone is spoofable — require the device to actually
-        // exist (as a peer or as an approved registration) before trusting it.
-        // typeof guards keep minimal test doubles working; the production
-        // database module always defines both lookups.
-        if (typeof db.getPeerById === 'function' && typeof db.getPendingRegistrationByDeviceId === 'function') {
-            try {
-                const peer = await db.getPeerById(deviceId);
-                const reg = await db.getPendingRegistrationByDeviceId(deviceId);
-                if (!peer && !(reg && reg.status === 'approved')) {
-                    return res.status(401).json({ error: 'Unknown device' });
-                }
-            } catch (_) {
-                return res.status(401).json({ error: 'Unknown device' });
-            }
-        }
-        req.deviceId = deviceId;
-        return next();
-    }
-    return res.status(401).json({ error: 'Missing device identification' });
-}
+const { identifyDevice } = require('../middleware/deviceAuth');
 
 // ---------------------------------------------------------------------------
 //  Helper: proxy to Go server

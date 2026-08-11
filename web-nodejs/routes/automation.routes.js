@@ -42,6 +42,7 @@ const router = express.Router();
 const db = require('../services/database');
 const { getAdapter } = require('../services/dbAdapter');
 const { getSmtpSettings, putSmtpSettings, testSmtpSettings } = require('../lib/smtpSettingsHandlers');
+const { identifyDevice } = require('../middleware/deviceAuth');
 
 // ---------------------------------------------------------------------------
 //  Valid values
@@ -53,31 +54,6 @@ const VALID_SEVERITIES = ['info', 'warning', 'critical'];
 const VALID_COMMAND_TYPES = ['shell', 'powershell', 'script', 'restart_service', 'reboot'];
 
 const { requireAuth, requirePermission, roleHasPermission } = require('../middleware/auth');
-
-// ---------------------------------------------------------------------------
-//  Auth middleware
-// ---------------------------------------------------------------------------
-
-async function identifyDevice(req, res, next) {
-    const auth = req.headers['authorization'];
-    if (auth && auth.startsWith('Bearer ')) {
-        const token = auth.substring(7).trim();
-        try {
-            const tokenRow = await db.getAccessToken(token);
-            if (tokenRow) {
-                req.deviceId = tokenRow.client_id || null;
-                await db.touchAccessToken(token);
-                return next();
-            }
-        } catch (_) { /* ignored */ }
-    }
-    const deviceId = req.headers['x-device-id'];
-    if (deviceId && /^[A-Za-z0-9_-]{3,64}$/.test(deviceId)) {
-        req.deviceId = deviceId;
-        return next();
-    }
-    return res.status(401).json({ error: 'Missing device identification' });
-}
 
 // ===========================================================================
 //  Alert Rules

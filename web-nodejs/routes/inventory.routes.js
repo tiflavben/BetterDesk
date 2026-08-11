@@ -27,49 +27,11 @@ const db = require('../services/database');
 const { getAdapter } = require('../services/dbAdapter');
 const betterdeskApi = require('../services/betterdeskApi');
 const { requireAuth, requirePermission } = require('../middleware/auth');
+const { requireDeviceToken } = require('../middleware/deviceAuth');
 
 // ---------------------------------------------------------------------------
 //  Helpers (shared with bd-api.routes.js)
 // ---------------------------------------------------------------------------
-
-function extractBearerToken(req) {
-    const auth = req.headers['authorization'];
-    const match = typeof auth === 'string' && /^Bearer\s+(\S+)$/.exec(auth);
-    return match ? match[1] : null;
-}
-
-/**
- * Authenticate a device with an unrevoked, non-expired access token.
- *
- * X-Device-Id is intentionally not an authentication credential: accepting it
- * alone would let any client impersonate an enrolled device.
- */
-async function requireDeviceToken(req, res, next) {
-    const token = extractBearerToken(req);
-    if (!token) {
-        return res.status(401).json({ error: 'Bearer access token required' });
-    }
-
-    let tokenRow;
-    try {
-        tokenRow = await db.getAccessToken(token);
-    } catch (_) {
-        return res.status(401).json({ error: 'Invalid or expired access token' });
-    }
-
-    if (!tokenRow || !tokenRow.client_id) {
-        return res.status(401).json({ error: 'Invalid or unbound access token' });
-    }
-
-    req.deviceId = tokenRow.client_id;
-    req.deviceToken = tokenRow;
-    try {
-        await db.touchAccessToken(token);
-    } catch (_) {
-        // Recording last use must not invalidate an already validated token.
-    }
-    return next();
-}
 
 /**
  * Require the access token to belong to the requested device before any data

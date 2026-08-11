@@ -34,6 +34,7 @@ const remoteRelay = require('../services/remoteRelay');
 const brandingService = require('../services/brandingService');
 const authService = require('../services/authService');
 const betterdeskApi = require('../services/betterdeskApi');
+const { identifyDevice, extractBearerToken } = require('../middleware/deviceAuth');
 
 // ---------------------------------------------------------------------------
 //  Help requests & chat are stored on the Go server (single source of truth).
@@ -70,12 +71,6 @@ function getClientIp(req) {
         || req.headers['x-real-ip']
         || req.socket?.remoteAddress
         || 'unknown';
-}
-
-function extractBearerToken(req) {
-    const auth = req.headers['authorization'];
-    if (!auth || !auth.startsWith('Bearer ')) return null;
-    return auth.substring(7).trim();
 }
 
 function requireOperatorRole(req, res, next) {
@@ -199,47 +194,6 @@ async function requireDeviceAuth(req, res, next) {
     const hasAuth = !!req.headers['authorization'];
     console.warn(`[BD-API] Auth FAILED ${req.method} ${req.path} — Bearer=${hasAuth ? '[present-invalid]' : '[absent]'} ip=${req.ip}`);
     return res.status(401).json({ error: 'Missing or invalid Bearer access token' });
-}
-
-/**
- * Lightweight auth — token OR device_id header (for unauthenticated heartbeat).
- * Sets req.deviceId from token's client_id or from X-Device-Id header.
- */
-async function identifyDevice(req, res, next) {
-    const token = extractBearerToken(req);
-    if (token) {
-        try {
-            const tokenRow = await db.getAccessToken(token);
-            if (tokenRow) {
-                req.deviceId = tokenRow.client_id || null;
-                req.deviceToken = tokenRow;
-                await db.touchAccessToken(token);
-                return next();
-            }
-        } catch (_) {}
-    }
-    // Fallback: X-Device-Id header (for registration before login).
-    // P1: the header alone is spoofable — require the device to actually exist
-    // (as a peer or as an approved registration) before trusting it.
-    const deviceId = req.headers['x-device-id'];
-    if (deviceId && /^[A-Za-z0-9_-]{3,64}$/.test(deviceId)) {
-        // typeof guards keep minimal test doubles working; the production
-        // database module always defines both lookups.
-        if (typeof db.getPeerById === 'function' && typeof db.getPendingRegistrationByDeviceId === 'function') {
-            try {
-                const peer = await db.getPeerById(deviceId);
-                const reg = await db.getPendingRegistrationByDeviceId(deviceId);
-                if (!peer && !(reg && reg.status === 'approved')) {
-                    return res.status(401).json({ error: 'Unknown device' });
-                }
-            } catch (_) {
-                return res.status(401).json({ error: 'Unknown device' });
-            }
-        }
-        req.deviceId = deviceId;
-        return next();
-    }
-    return res.status(401).json({ error: 'Missing device identification' });
 }
 
 // ---------------------------------------------------------------------------

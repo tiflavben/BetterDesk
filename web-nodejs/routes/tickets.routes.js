@@ -36,6 +36,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { getAdapter } = require('../services/dbAdapter');
 const { uploadLimiter, fileAccessLimiter } = require('../middleware/rateLimiter');
+const { identifyDevice } = require('../middleware/deviceAuth');
 
 // ---------------------------------------------------------------------------
 //  Config
@@ -514,29 +515,6 @@ router.get('/attachments/:aid(\\d+)', fileAccessLimiter, requireAuth, async (req
 // ---------------------------------------------------------------------------
 //  Device-facing endpoints (agent creates/views tickets via token)
 // ---------------------------------------------------------------------------
-
-const db = require('../services/database');
-
-async function identifyDevice(req, res, next) {
-    const auth = req.headers['authorization'];
-    if (auth && auth.startsWith('Bearer ')) {
-        const token = auth.substring(7).trim();
-        try {
-            const tokenRow = await db.getAccessToken(token);
-            if (tokenRow) {
-                req.deviceId = tokenRow.client_id || null;
-                await db.touchAccessToken(token);
-                return next();
-            }
-        } catch (_) { /* ignored */ }
-    }
-    const deviceId = req.headers['x-device-id'];
-    if (deviceId && /^[A-Za-z0-9_-]{3,64}$/.test(deviceId)) {
-        req.deviceId = deviceId;
-        return next();
-    }
-    return res.status(401).json({ error: 'Missing device identification' });
-}
 
 /**
  * POST /api/bd/tickets — Create ticket from desktop agent.

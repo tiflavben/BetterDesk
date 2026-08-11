@@ -29,45 +29,13 @@
 const express = require('express');
 const router = express.Router();
 const { getAdapter } = require('../services/dbAdapter');
+const { identifyDevice } = require('../middleware/deviceAuth');
 
 const { requireAuth, requirePermission } = require('../middleware/auth');
 
 // ---------------------------------------------------------------------------
 //  Auth middleware helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Strict device auth — bearer access token OR X-Device-Id header.
- * No session fallback (endpoints are under the CSRF-exempt /api/bd prefix).
- * Sets req.deviceId from the token's client_id or the validated header.
- */
-function extractBearerToken(req) {
-    const auth = req.headers['authorization'] || '';
-    if (!auth.startsWith('Bearer ')) return null;
-    return auth.substring(7).trim();
-}
-
-async function identifyDevice(req, res, next) {
-    const token = extractBearerToken(req);
-    if (token) {
-        try {
-            const db = getAdapter();
-            const tokenRow = await db.getAccessToken(token);
-            if (tokenRow) {
-                req.deviceId = tokenRow.client_id || null;
-                req.deviceToken = tokenRow;
-                await db.touchAccessToken(token);
-                return next();
-            }
-        } catch (_) { /* ignored */ }
-    }
-    const deviceId = req.headers['x-device-id'];
-    if (deviceId && /^[A-Za-z0-9_-]{3,64}$/.test(deviceId)) {
-        req.deviceId = deviceId;
-        return next();
-    }
-    return res.status(401).json({ error: 'Missing device identification' });
-}
 
 // =========================================================================
 //  Admin-facing — Policy CRUD

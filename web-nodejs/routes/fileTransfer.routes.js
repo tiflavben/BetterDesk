@@ -30,19 +30,12 @@ const fileTransferService = require('../services/fileTransferService');
 
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { uploadLimiter, fileAccessLimiter } = require('../middleware/rateLimiter');
+const { identifyDevice } = require('../middleware/deviceAuth');
 
-// ---------------------------------------------------------------------------
-//  Middleware helpers
-// ---------------------------------------------------------------------------
-
-function identifyDevice(req, res, next) {
-    const deviceId = req.headers['x-device-id'] || req.body?.device_id;
-    if (!deviceId) {
-        return res.status(400).json({ error: 'Missing device identifier' });
-    }
-    req.deviceId = deviceId;
-    next();
-}
+// Device-facing auth — the agent may send its device id in the request body
+// instead of the X-Device-Id header; keep that fallback via the shared module.
+const identifyDeviceWithBodyFallback = (req, res, next) =>
+    identifyDevice(req, res, next, { allowBodyDeviceId: true });
 
 // ---------------------------------------------------------------------------
 //  Admin-facing endpoints
@@ -150,7 +143,7 @@ router.get('/transfers/:id/download', fileAccessLimiter, requireAuth, requirePer
  *
  * Body JSON with { action, transfer_id, chunk_index, data, filename, size, mime_type }
  */
-router.post('/file-transfer', identifyDevice, (req, res) => {
+router.post('/file-transfer', identifyDeviceWithBodyFallback, (req, res) => {
     try {
         const result = fileTransferService.handleWsMessage(req.deviceId, req.body);
         res.json(result);
@@ -162,7 +155,7 @@ router.post('/file-transfer', identifyDevice, (req, res) => {
 /**
  * GET /api/bd/file-transfer/:id — Agent gets transfer info
  */
-router.get('/file-transfer/:id', identifyDevice, (req, res) => {
+router.get('/file-transfer/:id', identifyDeviceWithBodyFallback, (req, res) => {
     const transfer = fileTransferService.getTransfer(req.params.id);
     if (!transfer) {
         return res.status(404).json({ error: 'Transfer not found' });
