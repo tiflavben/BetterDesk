@@ -145,6 +145,100 @@ app.use(sessionMiddleware);
 // Used in ?v= query strings so browsers cache assets per deployment.
 app.locals.cacheVersion = config.appVersion + '.' + Date.now();
 
+// ---- Gzip compression for text responses (zero-dependency, node built-in zlib) ----
+// Streaming gzip for any text response (static assets via express.static, rendered
+// HTML, JSON APIs) when the client advertises Accept-Encoding: gzip. This mirrors
+// the classic `compression` middleware pattern without adding a dependency (server
+// node_modules are copied in-place on deployment; a new npm dep would not be
+// installed there). Design notes:
+//   - No server-side response cache: static assets are browser-cached for 7d, so
+//     each asset is compressed once per cache miss; recompression after a deploy
+//     always yields fresh content.
+//   - Range requests are skipped (gzip + Content-Range would corrupt downloads).
+//   - Binary types (png/jpg/woff2/etc.) and already-encoded responses are skipped.
+//   - If gzip fails mid-stream the response is terminated rather than left hanging.
+const zlib = require('zlib');
+const GZIP_TEXT_TYPES = /(?:text\/|application\/(?:javascript|json|xml|x-javascript|ecmascript)|image\/svg\+xml)/;
+const GZIP_SKIP_EXT = /\.(?:png|jpe?g|gif|webp|woff2?|ttf|otf|eot|gz|br|zip|mp4|mp3|wasm)$/i;
+app.use((req, res, next) => {
+    const acceptEncoding = (req.headers['accept-encoding'] || '').toLowerCase();
+    if (!acceptEncoding.includes('gzip') || (req.method !== 'GET' && req.method !== 'HEAD') || req.headers.range) {
+        return next();
+    }
+    const origWriteHead = res.writeHead;
+    const origWrite = res.write.bind(res);
+    const origEnd = res.end.bind(res);
+    let gzipStream = null;
+    let gzipping = false;
+    // Node 隐式头部机制（关键设计约束）：当 handler 只 setHeader() 后直接
+    // stream.pipe(res)（express.static 的 send 库正是如此，不显式调 writeHead），
+    // 首次 res.write() 会先于 writeHead hook 触发，Node 随后才隐式调 writeHead。
+    // 若 gzip 只在 writeHead 内启动，首段 body 已明文写进 socket、Content-Encoding:
+    // gzip 头却随后才发出 → 浏览器按 gzip 解压明文失败（页面永久 loading）。
+    // 因此 startGzip() 把"判定+初始化"抽成惰性辅助函数，write 与 writeHead 两条
+    // 路径共用；幂等（gzipping 已置位直接返回 true），不会重复创建 gzipStream。
+    const startGzip = (headers) => {
+        if (gzipping) return true;
+        let contentType = res.getHeader('Content-Type');
+        if (headers && typeof headers === 'object' && !Buffer.isBuffer(headers) && !Array.isArray(headers)) {
+            contentType = headers['Content-Type'] || headers['content-type'] || contentType;
+        }
+        if (!contentType || !GZIP_TEXT_TYPES.test(contentType) || res.getHeader('Content-Encoding') || GZIP_SKIP_EXT.test(req.path)) {
+            return false;
+        }
+        gzipping = true;
+        res.removeHeader('Content-Length');
+        res.setHeader('Content-Encoding', 'gzip');
+        res.setHeader('Vary', 'Accept-Encoding');
+        if (headers && typeof headers === 'object' && !Buffer.isBuffer(headers) && !Array.isArray(headers)) {
+            delete headers['Content-Length'];
+            headers['Content-Encoding'] = 'gzip';
+            headers['Vary'] = 'Accept-Encoding';
+        }
+        gzipStream = zlib.createGzip({ level: 6 });
+        gzipStream.on('data', (chunk) => origWrite(chunk));
+        gzipStream.on('end', () => origEnd());
+        gzipStream.on('error', () => { try { origEnd(); } catch (_) { /* best effort */ } });
+        return true;
+    };
+    res.writeHead = function (statusCode, headers) {
+        startGzip(headers);
+        return origWriteHead.call(this, statusCode, headers);
+    };
+    res.write = function (chunk, encoding, callback) {
+        if (!gzipping && !gzipStream) {
+            // 惰性启动：首次 write 到达时 send 库应已 setHeader('Content-Type')；
+            // 若仍未设置（自定义 handler 先写数据未设类型），startGzip() 返回
+            // false，本块数据走 origWrite 原样下发，绝不带 gzip 头发明文。
+            startGzip();
+        }
+        if (gzipping && gzipStream) {
+            if (typeof encoding === 'function') { callback = encoding; encoding = undefined; }
+            gzipStream.write(chunk, encoding);
+            if (typeof callback === 'function') process.nextTick(callback);
+            return true;
+        }
+        return origWrite(chunk, encoding, callback);
+    };
+    res.end = function (chunk, encoding, callback) {
+        if (!gzipping && !gzipStream) {
+            // res.end(chunk) 在 Node 内部走 write_() 辅助函数而非 this.write ——
+            // 覆写后的 res.write 会被绕过，因此 render 路径（Express res.send/
+            // res.render 以 chunk 调 end）也必须在这里惰性尝试 startGzip()，
+            // 否则 body 明文出站后 writeHead 才启动 gzip → 头体不匹配损坏。
+            startGzip();
+        }
+        if (gzipping && gzipStream) {
+            if (chunk) gzipStream.write(chunk, encoding || undefined);
+            gzipStream.end();
+            if (typeof callback === 'function') process.nextTick(callback);
+            return this;
+        }
+        return origEnd(chunk, encoding, callback);
+    };
+    next();
+});
+
 // Static files
 app.use(express.static(path.join(__dirname, 'public'), {
     maxAge: config.isProduction ? '7d' : '0',

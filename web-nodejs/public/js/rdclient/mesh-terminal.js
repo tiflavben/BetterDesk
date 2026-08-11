@@ -5,9 +5,9 @@
     'use strict';
 
     var XTERM_VERSION = '5.5.0';
-    var XTERM_CSS_URL = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@' + XTERM_VERSION + '/css/xterm.min.css';
-    var XTERM_JS_URL = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@' + XTERM_VERSION + '/lib/xterm.min.js';
-    var XTERM_FIT_URL = 'https://cdn.jsdelivr.net/npm/@xterm/addon-fit@' + XTERM_VERSION + '/lib/addon-fit.min.js';
+    var XTERM_CSS_URL = '/vendor/xterm/xterm.min.css';
+    var XTERM_JS_URL = '/vendor/xterm/xterm.min.js';
+    var XTERM_FIT_URL = '/vendor/xterm/addon-fit.min.js'; // addon-fit 0.10.0 (5.5.0 does not exist on CDN)
     var CTRL = '102938';
     var PROTOCOL = '1';
 

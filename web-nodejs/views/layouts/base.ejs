@@ -21,9 +21,7 @@
         <% }); %>
     <% } %>
     
-    <!-- Preload critical resources -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Material Icons are self-hosted (public/css/material-icons.css) — no external font CDN -->
 </head>
 <body class="<%= typeof bodyClass !== 'undefined' ? bodyClass : '' %>">
     <%- body %>

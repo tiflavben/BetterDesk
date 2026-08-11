@@ -498,9 +498,9 @@
         // xterm core: 5.5.0; addon-fit has its own version (0.10.0)
         const XTERM_VERSION = '5.5.0';
         const XTERM_FIT_VERSION = '0.10.0';
-        const XTERM_CSS_URL = `https://cdn.jsdelivr.net/npm/@xterm/xterm@${XTERM_VERSION}/css/xterm.min.css`;
-        const XTERM_JS_URL = `https://cdn.jsdelivr.net/npm/@xterm/xterm@${XTERM_VERSION}/lib/xterm.min.js`;
-        const XTERM_FIT_URL = `https://cdn.jsdelivr.net/npm/@xterm/addon-fit@${XTERM_FIT_VERSION}/lib/addon-fit.min.js`;
+        const XTERM_CSS_URL = '/vendor/xterm/xterm.min.css';
+        const XTERM_JS_URL = '/vendor/xterm/xterm.min.js';
+        const XTERM_FIT_URL = '/vendor/xterm/addon-fit.min.js';
 
         let xtermLoaded = false;
         let xtermLoading = null;
