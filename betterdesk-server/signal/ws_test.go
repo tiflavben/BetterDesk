@@ -402,13 +402,13 @@ func TestWSEffectiveRemoteAddr(t *testing.T) {
 	t.Parallel()
 	loopbackNet := mustCIDR(t, "10.0.0.0/8")
 	cases := []struct {
-		name            string
-		trustProxy      bool
-		trustedProxies  []*net.IPNet
-		remoteAddr      string
-		xri             string
-		xff             string
-		want            string
+		name           string
+		trustProxy     bool
+		trustedProxies []*net.IPNet
+		remoteAddr     string
+		xri            string
+		xff            string
+		want           string
 	}{
 		{
 			name:       "no proxy trust ignores headers",
@@ -1038,5 +1038,49 @@ func TestWSPunchHoleSentExactPortNotSiblingNAT(t *testing.T) {
 		if msg.GetPunchHoleResponse() != nil {
 			t.Fatal("peer B must not receive PunchHoleResponse intended for peer A")
 		}
+	}
+}
+
+func TestWSSignalHeartbeatSourceIPMismatch(t *testing.T) {
+	srv, _ := newTestSignalServer(t, config.EnrollmentModeOpen)
+	srv.peers.Put(&peer.Entry{
+		ID:       "WSIP001",
+		IP:       "203.0.113.50:5555",
+		Serial:   1,
+		ConnType: peer.ConnWS,
+		LastReg:  time.Now(),
+	})
+
+	// Same host with a different port is a legitimate NAT rebinding.
+	resp := srv.handleRegisterPeerWS(&pb.RegisterPeer{Id: "WSIP001", Serial: 2}, "203.0.113.50:6666")
+	if resp == nil {
+		t.Fatal("same-host WS heartbeat should be accepted")
+	}
+	entry := srv.peers.Get("WSIP001")
+	if entry == nil {
+		t.Fatal("WSIP001 should still be registered")
+	}
+	if entry.IP != "203.0.113.50:6666" {
+		t.Fatalf("same-host heartbeat should update port, got %q", entry.IP)
+	}
+	before := entry.LastReg
+
+	// Different host must not be able to hijack or refresh the binding.
+	resp = srv.handleRegisterPeerWS(&pb.RegisterPeer{Id: "WSIP001", Serial: 3}, "198.51.100.99:7777")
+	if resp != nil {
+		t.Fatalf("cross-host WS heartbeat should be rejected, got %+v", resp)
+	}
+	entry = srv.peers.Get("WSIP001")
+	if entry == nil {
+		t.Fatal("WSIP001 should remain registered after rejected heartbeat")
+	}
+	if entry.IP != "203.0.113.50:6666" {
+		t.Fatalf("cross-host heartbeat must not change IP, got %q", entry.IP)
+	}
+	if !entry.LastReg.Equal(before) {
+		t.Fatalf("cross-host heartbeat must not refresh LastReg, before=%v after=%v", before, entry.LastReg)
+	}
+	if entry.Serial != 2 {
+		t.Fatalf("cross-host heartbeat must not update serial, got %d", entry.Serial)
 	}
 }

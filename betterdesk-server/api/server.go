@@ -534,13 +534,15 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("POST /api/branding", s.requireRole(auth.RoleAdmin, s.handleSaveBranding))
 
 	// CDAP device management (requires CDAP gateway to be enabled)
-	mux.HandleFunc("GET /api/cdap/status", s.handleCDAPStatus)
-	mux.HandleFunc("GET /api/cdap/devices", s.handleCDAPListDevices)
-	mux.HandleFunc("GET /api/cdap/devices/{id}", s.handleCDAPDeviceInfo)
-	mux.HandleFunc("GET /api/cdap/devices/{id}/manifest", s.handleCDAPDeviceManifest)
-	mux.HandleFunc("GET /api/cdap/devices/{id}/state", s.handleCDAPDeviceState)
+	// Read routes gated by cdap.view so arbitrary authenticated roles cannot
+	// enumerate CDAP devices (P2 audit: role gate missing).
+	mux.HandleFunc("GET /api/cdap/status", s.requirePermission(auth.PermCDAPView, s.handleCDAPStatus))
+	mux.HandleFunc("GET /api/cdap/devices", s.requirePermission(auth.PermCDAPView, s.handleCDAPListDevices))
+	mux.HandleFunc("GET /api/cdap/devices/{id}", s.requirePermission(auth.PermCDAPView, s.handleCDAPDeviceInfo))
+	mux.HandleFunc("GET /api/cdap/devices/{id}/manifest", s.requirePermission(auth.PermCDAPView, s.handleCDAPDeviceManifest))
+	mux.HandleFunc("GET /api/cdap/devices/{id}/state", s.requirePermission(auth.PermCDAPView, s.handleCDAPDeviceState))
 	mux.HandleFunc("POST /api/cdap/devices/{id}/command", s.requireRole(auth.RoleOperator, s.handleCDAPSendCommand))
-	mux.HandleFunc("GET /api/cdap/alerts", s.handleCDAPAlerts)
+	mux.HandleFunc("GET /api/cdap/alerts", s.requirePermission(auth.PermCDAPView, s.handleCDAPAlerts))
 
 	// CDAP auth delegation (admin only)
 	mux.HandleFunc("POST /api/cdap/delegate", s.requireRole(auth.RoleAdmin, s.handleCDAPDelegateCreate))
@@ -597,9 +599,9 @@ func (s *Server) Start(ctx context.Context) error {
 	// BetterDesk desktop client management WebSocket (no API key — device auth)
 	mux.HandleFunc("GET /ws/bd-mgmt/{device_id}", s.handleBdMgmt)
 	// Management REST endpoints (admin/operator only)
-	mux.HandleFunc("GET /api/bd/mgmt/{device_id}/status", s.handleBdMgmtStatus)
+	mux.HandleFunc("GET /api/bd/mgmt/{device_id}/status", s.requireRole(auth.RoleOperator, s.handleBdMgmtStatus))
 	mux.HandleFunc("POST /api/bd/mgmt/{device_id}/send", s.requireRole(auth.RoleOperator, s.handleBdMgmtSend))
-	mux.HandleFunc("GET /api/bd/mgmt/connected", s.handleBdMgmtConnected)
+	mux.HandleFunc("GET /api/bd/mgmt/connected", s.requireRole(auth.RoleOperator, s.handleBdMgmtConnected))
 
 	// Prometheus metrics. Gated via H-03 — see handleMetrics for the actual
 	// IP-allowlist / auth check. We register a wrapper here that enforces the

@@ -896,8 +896,11 @@ func (s *Server) handleClientHeartbeat(w http.ResponseWriter, r *http.Request) {
 	// Update peer status to ONLINE
 	_ = s.db.UpdatePeerStatus(deviceID, "ONLINE", clientIP)
 
-	// If the user logged in before the peer row existed, bind owner now.
-	db.ApplyActiveSessionOwner(s.db, deviceID, body.UUID)
+	// NOTE: owner binding intentionally NOT performed here. /api/heartbeat is
+	// anonymously reachable (public auth exclusion list), so it must not write
+	// the peers.user ownership field (P2 audit: anonymous ownership tampering).
+	// Owner binding happens on the device-authenticated RegisterPk path
+	// (signal/handler.go) and during login (client_sessions.go BindPeerOwner).
 
 	// Save metrics if any values provided (values > 0)
 	if body.CPU > 0 || body.Memory > 0 || body.Disk > 0 {

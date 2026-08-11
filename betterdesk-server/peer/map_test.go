@@ -2,6 +2,7 @@ package peer
 
 import (
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -530,9 +531,9 @@ func TestMapFindByAddrExactPort(t *testing.T) {
 		LastReg: time.Now(),
 	})
 	m.Put(&Entry{
-		ID:      "B1",
-		IP:      "198.51.100.10:60001",
-		LastReg: time.Now(),
+		ID:       "B1",
+		IP:       "198.51.100.10:60001",
+		LastReg:  time.Now(),
 		ConnType: ConnTCP,
 	})
 
@@ -591,5 +592,62 @@ func TestFindAllByIP(t *testing.T) {
 	}
 	if m.CountByIP(net.ParseIP("203.0.113.44")) != 2 {
 		t.Fatalf("CountByIP should match FindAllByIP length")
+	}
+}
+
+func TestConcurrentHeartbeatWSAndUDP(t *testing.T) {
+	const id = "RACEP1"
+	dbUUID := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
+	dbPK := make([]byte, 32)
+
+	for i := 0; i < 100; i++ {
+		m := NewMap()
+		m.Put(&Entry{ID: id, LastReg: time.Now()})
+
+		var wg sync.WaitGroup
+		for j := 0; j < 2; j++ {
+			wg.Add(1)
+			go func(j int) {
+				defer wg.Done()
+				m.UpdateHeartbeat(id, &net.UDPAddr{IP: net.ParseIP("10.0.0.1"), Port: 10000 + i}, int32(i))
+			}(j)
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				m.UpdateHeartbeatWS(id, "10.0.0.2:20000", int32(i))
+			}()
+
+			wg.Add(1)
+			go func(j int) {
+				defer wg.Done()
+				incomingUUID := append([]byte(nil), dbUUID...)
+				incomingPK := make([]byte, 32)
+				copy(incomingPK, dbPK)
+				if (i+j)%2 == 1 {
+					incomingPK[0] ^= 0xff
+				}
+				m.BindPK(id, dbUUID, dbPK, incomingUUID, incomingPK, "10.0.0.3:30000")
+			}(j)
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_ = m.Get(id)
+				_, _ = m.GetSnapshot(id, 2, 4)
+				_ = m.HasPK(id)
+				_, _ = m.SourceIPAllows(id, "10.0.0.1")
+			}()
+		}
+
+		wg.Wait()
+
+		e := m.Get(id)
+		if e == nil {
+			t.Fatalf("iteration %d: peer %s should still exist", i, id)
+		}
+		if len(e.PK) == 0 {
+			t.Fatalf("iteration %d: PK should be bound by the end of the round", i)
+		}
 	}
 }

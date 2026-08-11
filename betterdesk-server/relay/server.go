@@ -451,6 +451,11 @@ func (s *Server) startRelay(conn1, conn2 net.Conn, uuid string) {
 			}
 			if !s.sessionLimiter.Acquire(ip) {
 				log.Printf("[relay] Active session limit exceeded for %s (UUID %s)", ip, uuid)
+				// Release any IPs already acquired in this loop before bailing,
+				// otherwise their slots leak (P2 audit: sessionLimiter leak).
+				for _, prev := range ips {
+					s.sessionLimiter.Release(prev)
+				}
 				conn1.Close()
 				conn2.Close()
 				return

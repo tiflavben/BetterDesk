@@ -9,6 +9,8 @@
 package peer
 
 import (
+	"bytes"
+	"encoding/hex"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -22,6 +24,7 @@ const (
 	ConnUDP ConnType = iota
 	ConnTCP
 	ConnWS
+	ConnNone
 )
 
 // String returns a human-readable connection type.
@@ -233,6 +236,212 @@ func (m *Map) Put(e *Entry) *Entry {
 	return old
 }
 
+// hostOf extracts the host part of an addr string (ip:port → ip; a bare IP or
+// hostname is returned unchanged). It matches signal.hostFromAddrString.
+func hostOf(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err == nil && host != "" {
+		return host
+	}
+	return addr
+}
+
+// SourceIPAllows reports whether the source host may update this peer's
+// binding. A missing peer or an entry with no recorded IP is allowed so the
+// caller can fall through to new-peer handling; a host mismatch is rejected
+// while a port change remains allowed.
+func (m *Map) SourceIPAllows(id, srcHost string) (allowed bool, recordedIP string) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	e, ok := m.entries[id]
+	if !ok || e.IP == "" {
+		return true, ""
+	}
+	if hostOf(e.IP) != srcHost {
+		return false, e.IP
+	}
+	return true, e.IP
+}
+
+// UpdateHeartbeatWS atomically refreshes a WebSocket heartbeat and records the
+// latest WS endpoint in IPHistory when the address changes.
+func (m *Map) UpdateHeartbeatWS(id string, ip string, serial int32) (ok, requestPk bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, found := m.entries[id]
+	if !found {
+		return false, false
+	}
+	e.LastReg = time.Now()
+	e.Serial = serial
+	e.ConnType = ConnWS
+	oldIP := e.IP
+	e.IP = ip
+	e.MissedBeats = 0
+	e.StatusTier = StatusOnline
+	e.HeartbeatCount++
+	if oldIP != "" && oldIP != ip {
+		e.IPHistory = append(e.IPHistory, oldIP)
+		if len(e.IPHistory) > 5 {
+			e.IPHistory = e.IPHistory[len(e.IPHistory)-5:]
+		}
+	}
+	return true, len(e.PK) == 0
+}
+
+// BindWS atomically binds a WebSocket connection to a peer entry.
+func (m *Map) BindWS(id string, wsc interface{}) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.entries[id]
+	if !ok {
+		return false
+	}
+	e.ConnType = ConnWS
+	e.WSConn = wsc
+	return true
+}
+
+// UnbindWS clears a WebSocket binding only when the current binding is exactly
+// the closing connection, so a newer WS connection or a UDP fallback is not
+// unbound by the stale goroutine.
+func (m *Map) UnbindWS(id string, wsc interface{}) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.entries[id]
+	if !ok || e.ConnType != ConnWS || e.WSConn != wsc {
+		return false
+	}
+	e.WSConn = nil
+	e.ConnType = ConnNone
+	e.IP = ""
+	e.UDPAddr = nil
+	return true
+}
+
+// HasPK reports whether the peer entry already has a PK, computed under the
+// map lock to avoid racing BindPK.
+func (m *Map) HasPK(id string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	e, ok := m.entries[id]
+	return ok && len(e.PK) > 0
+}
+
+// MarkDBSynced refreshes the peer's database sync timestamp only after the
+// configured interval has elapsed, so callers can debounce status updates.
+func (m *Map) MarkDBSynced(id string, interval time.Duration) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.entries[id]
+	if !ok {
+		return false
+	}
+	if time.Since(e.LastDBSync) <= interval {
+		return false
+	}
+	e.LastDBSync = time.Now()
+	return true
+}
+
+// BindPKResult describes the outcome of an atomic RegisterPk identity update.
+type BindPKResult struct {
+	OK           bool
+	UUIDMismatch bool
+	PKMismatch   bool
+	UUID         []byte // lock-internal copy
+	PK           []byte // lock-internal copy
+}
+
+// normalizeUUIDBytes mirrors signal.normalizePeerUUIDBytes: 16-byte values are
+// returned as-is, even-length values are tried as hex, and everything else is
+// returned unchanged. Keep this copy aligned with uuid_helpers.go.
+func normalizeUUIDBytes(raw []byte) []byte {
+	if len(raw) == 0 {
+		return nil
+	}
+	if len(raw) == 16 {
+		return raw
+	}
+	if len(raw) == 32 || len(raw)%2 == 0 {
+		if decoded, err := hex.DecodeString(string(raw)); err == nil && len(decoded) > 0 {
+			return decoded
+		}
+	}
+	return raw
+}
+
+// BindPK atomically hydrates and applies one RegisterPk identity update while
+// holding the map write lock, preventing lock-free reads and TOCTOU races.
+func (m *Map) BindPK(id string, dbUUID, dbPK, incomingUUID, incomingPK []byte, addrStr string) (res BindPKResult) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.entries[id]
+	if !ok {
+		return BindPKResult{OK: false}
+	}
+
+	if len(e.UUID) == 0 && len(dbUUID) > 0 {
+		e.UUID = append([]byte(nil), normalizeUUIDBytes(dbUUID)...)
+	}
+	if len(e.PK) == 0 && len(dbPK) > 0 {
+		e.PK = append([]byte(nil), dbPK...)
+	}
+
+	res = BindPKResult{
+		OK:   true,
+		UUID: append([]byte(nil), e.UUID...),
+		PK:   append([]byte(nil), e.PK...),
+	}
+
+	if len(e.UUID) > 0 && len(incomingUUID) > 0 &&
+		!bytes.Equal(normalizeUUIDBytes(e.UUID), normalizeUUIDBytes(incomingUUID)) {
+		res.UUIDMismatch = true
+		return res
+	}
+	if len(e.PK) > 0 && len(incomingPK) > 0 && !bytes.Equal(e.PK, incomingPK) {
+		res.PKMismatch = true
+		return res
+	}
+
+	if len(incomingUUID) > 0 {
+		e.UUID = append([]byte(nil), normalizeUUIDBytes(incomingUUID)...)
+	}
+	if len(incomingPK) > 0 {
+		e.PK = append([]byte(nil), incomingPK...)
+	}
+	e.LastReg = time.Now()
+	if addrStr != "" {
+		e.IP = addrStr
+		if e.UDPAddr == nil && e.ConnType != ConnWS {
+			e.ConnType = ConnTCP
+		}
+	}
+	res.UUID = append([]byte(nil), e.UUID...)
+	res.PK = append([]byte(nil), e.PK...)
+	return res
+}
+
+// RenameID atomically rekeys oldID's entry as newID and updates its identity,
+// closing open connections exactly like the previous Remove+Put sequence.
+func (m *Map) RenameID(oldID, newID string, pk, uuid []byte) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.entries[oldID]
+	if !ok {
+		return false
+	}
+	e.CloseConnections()
+	delete(m.entries, oldID)
+	e.ID = newID
+	e.PK = pk
+	if len(uuid) > 0 {
+		e.UUID = append([]byte(nil), uuid...)
+	}
+	m.entries[newID] = e
+	return true
+}
+
 // UpdateHeartbeat refreshes the heartbeat timestamp and address for a peer.
 // Returns false if the peer is not in the map.
 func (m *Map) UpdateHeartbeat(id string, addr *net.UDPAddr, serial int32) bool {
@@ -257,6 +466,9 @@ func (m *Map) UpdateHeartbeat(id string, addr *net.UDPAddr, serial int32) bool {
 		}
 		e.UDPAddr = addr
 		e.IP = newIP
+		if e.ConnType == ConnNone {
+			e.ConnType = ConnUDP
+		}
 	}
 	return true
 }

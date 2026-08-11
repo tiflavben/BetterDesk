@@ -138,7 +138,8 @@ func (s *Server) issueClientSession(user *db.User, clientID, clientUUID, clientI
 	}
 	// Map this RustDesk client device to the BetterDesk account (inventory/audit).
 	// No connection blocking — ownership only. If the peer row does not exist yet,
-	// heartbeat / RegisterPk will apply the binding via ApplyActiveSessionOwner.
+	// RegisterPk will apply the binding via ApplyActiveSessionOwner (the anonymous
+	// /api/heartbeat path no longer writes ownership).
 	db.BindPeerOwner(s.db, clientID, clientUUID, user.Username)
 	return plainToken, nil
 }

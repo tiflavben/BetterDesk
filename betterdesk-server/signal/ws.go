@@ -17,6 +17,7 @@ import (
 	"github.com/unitronix/betterdesk-server/config"
 	"github.com/unitronix/betterdesk-server/peer"
 	pb "github.com/unitronix/betterdesk-server/proto"
+	"github.com/unitronix/betterdesk-server/ratelimit"
 )
 
 // Package-level keepalive timings use atomic nanoseconds so tests can override
@@ -27,6 +28,11 @@ var wsSignalKeepAliveIntervalNs = int64(time.Duration(config.HeartbeatSuggestion
 // 101 before RegisterPk (RustDesk desktop ~1s — issue #229). Must stay below
 // typical proxy idle cuts but above ephemeral RequestRelay RTT (issue #276).
 var wsSignalIdleKeepAliveDelayNs = int64(800 * time.Millisecond)
+
+// wsConnLimiter caps concurrent WebSocket signal connections per client IP.
+// Prevents a single IP from exhausting signal resources via unlimited WS
+// upgrades (P2-2). Mirrors the relay server's per-IP ConnLimiter.
+var wsConnLimiter = ratelimit.NewConnLimiter(50)
 
 func wsSignalKeepAliveInterval() time.Duration {
 	return time.Duration(atomic.LoadInt64(&wsSignalKeepAliveIntervalNs))
@@ -105,11 +111,20 @@ func (s *Server) handleWSUpgrade(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ip := hostFromAddrString(wsEffectiveRemoteAddr(r, s.cfg))
+	if !wsConnLimiter.Acquire(ip) {
+		log.Printf("[signal] WS connection rejected from %s (per-IP limit exceeded)", ip)
+		http.Error(w, "too many connections", http.StatusTooManyRequests)
+		return
+	}
+	defer wsConnLimiter.Release(ip) // covers the entire connection lifetime; also releases if Accept itself fails
+
 	ws, err := websocket.Accept(w, r, opts)
 	if err != nil {
 		log.Printf("[signal] WS upgrade error: %v", err)
 		return
 	}
+
 	remoteAddr := wsEffectiveRemoteAddr(r, s.cfg)
 
 	log.Printf("[signal] WS upgrade remote=%s effective=%s path=%s origin=%q ua=%q xff=%q xri=%q",
@@ -180,14 +195,7 @@ func joinForwardedClientAddr(fwd, remoteAddr string) string {
 }
 
 func bindPeerWSConn(s *Server, peerID string, wsc *codec.WSConn) {
-	if peerID == "" {
-		return
-	}
-	entry := s.peers.Get(peerID)
-	if entry != nil {
-		entry.ConnType = peer.ConnWS
-		entry.WSConn = wsc
-	}
+	s.peers.BindWS(peerID, wsc)
 }
 
 func isLoopbackOrigin(origin string) bool {
@@ -203,11 +211,17 @@ func isLoopbackOrigin(origin string) bool {
 // Unlike TCP (single request-response), WS connections stay open for streaming
 // heartbeats and bi-directional signaling.
 func (s *Server) wsSignalLoop(wsc *codec.WSConn) {
-	defer wsc.Close()
-	defer s.unregisterWSPunchConn(wsc.RemoteAddr(), wsc)
-
 	remoteAddr := wsc.RemoteAddr()
 	peerID := ""
+	defer wsc.Close()
+	defer s.unregisterWSPunchConn(wsc.RemoteAddr(), wsc)
+	defer func() {
+		if peerID != "" {
+			if s.peers.UnbindWS(peerID, wsc) {
+				log.Printf("[signal] WS connection for peer %s from %s closed — binding cleared", peerID, remoteAddr)
+			}
+		}
+	}()
 	wsc.SetKeepAliveHandler(func() {
 		if peerID != "" {
 			s.peers.TouchHeartbeat(peerID)
@@ -516,13 +530,21 @@ func (s *Server) handleRegisterPeerWS(msg *pb.RegisterPeer, remoteAddr string) *
 			return nil
 		}
 
-		// Update heartbeat (WS has no real UDP addr)
-		existing.LastReg = time.Now()
-		existing.Serial = msg.Serial
-		existing.ConnType = peer.ConnWS
-		existing.IP = remoteAddr
+		// Reject WS heartbeats whose source host differs from the registered address.
+		// Same rule as the UDP path (handler.go) — only the host part is compared.
+		// Prevents a malicious WS client from hijacking a peer's binding by
+		// re-registering its ID from another source IP.
+		if allowed, recorded := s.peers.SourceIPAllows(id, clientHost); !allowed {
+			log.Printf("[signal] ws heartbeat source IP mismatch for peer %s: %s -> %s (rejected)", id, recorded, remoteAddr)
+			return nil
+		}
 
-		requestPk := len(existing.PK) == 0
+		// Update heartbeat (WS has no real UDP addr)
+		ok, requestPk := s.peers.UpdateHeartbeatWS(id, remoteAddr, msg.Serial)
+		if !ok {
+			// entry 已过期被清理——不保活、不响应
+			return nil
+		}
 		s.db.UpdatePeerStatus(id, "ONLINE", remoteAddr)
 
 		return &pb.RendezvousMessage{
@@ -552,6 +574,13 @@ func (s *Server) handleRegisterPeerWS(msg *pb.RegisterPeer, remoteAddr string) *
 		}
 		log.Printf("[signal] Rejected banned WS peer registration: %s from %s", id, remoteAddr)
 		s.revokeBannedPeerAccess(id, nil)
+		return nil
+	}
+
+	// SECURITY: same DB last-known-IP check as the UDP new-peer branch — a
+	// memory-expired peer must not re-register via WS from a foreign source IP.
+	if dbPeer, err := s.db.GetPeer(id); err == nil && dbPeer != nil && dbPeer.IP != "" && hostFromAddrString(dbPeer.IP) != clientHost {
+		log.Printf("[signal] ws registration source IP mismatch for peer %s: db=%s -> %s (rejected)", id, dbPeer.IP, clientHost)
 		return nil
 	}
 

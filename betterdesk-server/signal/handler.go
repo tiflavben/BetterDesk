@@ -342,20 +342,18 @@ func (s *Server) handleRegisterPeer(msg *pb.RegisterPeer, raddr *net.UDPAddr) {
 			return
 		}
 
-		// Reject heartbeats whose source IP differs from the registered address.
-		// Only the host part is compared — port changes (NAT rebinding) are allowed.
-		// Prevents a malicious client from hijacking a peer's UDP address (DoS /
-		// metadata / relay UUID disclosure via UDPAddr redirection).
-		if existing.IP != "" && hostFromAddrString(existing.IP) != raddr.IP.String() {
-			log.Printf("[signal] heartbeat source IP mismatch for peer %s: %s -> %s (rejected)", id, existing.IP, raddr.String())
+		if allowed, recorded := s.peers.SourceIPAllows(id, raddr.IP.String()); !allowed {
+			log.Printf("[signal] heartbeat source IP mismatch for peer %s: %s -> %s (rejected)", id, recorded, raddr.String())
 			return
 		}
 
 		// Update heartbeat
-		s.peers.UpdateHeartbeat(id, raddr, msg.Serial)
+		if !s.peers.UpdateHeartbeat(id, raddr, msg.Serial) {
+			return
+		}
 
 		// Respond: don't need PK (we already have it)
-		requestPk := len(existing.PK) == 0
+		requestPk := s.peers.HasPK(id)
 		resp := &pb.RendezvousMessage{
 			Union: &pb.RendezvousMessage_RegisterPeerResponse{
 				RegisterPeerResponse: &pb.RegisterPeerResponse{
@@ -366,9 +364,8 @@ func (s *Server) handleRegisterPeer(msg *pb.RegisterPeer, raddr *net.UDPAddr) {
 		s.sendUDP(resp, raddr)
 
 		// Debounce database status updates — only sync every 60s per peer (P1)
-		if time.Since(existing.LastDBSync) > 60*time.Second {
+		if s.peers.MarkDBSynced(id, 60*time.Second) {
 			s.db.UpdatePeerStatus(id, "ONLINE", raddr.IP.String())
-			existing.LastDBSync = time.Now()
 		}
 		return
 	}
@@ -405,6 +402,24 @@ func (s *Server) handleRegisterPeer(msg *pb.RegisterPeer, raddr *net.UDPAddr) {
 		return
 	}
 
+	// SECURITY: memory entry expired (RegTimeout) but a DB record exists — the
+	// caller would otherwise re-register via the new-peer branch with no source
+	// IP check. Reject when the DB last-known IP is set and its host differs from
+	// the registration source (same rule as the known-peer branch).
+	if dbPeer == nil {
+		dbPeer, _ = s.db.GetPeer(id)
+	}
+	if dbPeer != nil && dbPeer.IP != "" && hostFromAddrString(dbPeer.IP) != raddr.IP.String() {
+		log.Printf("[signal] registration source IP mismatch for peer %s: db=%s -> %s (rejected)", id, dbPeer.IP, raddr.String())
+		if s.auditLog != nil {
+			s.auditLog.Log(audit.ActionPeerRegistrationRejected, raddr.IP.String(), id, map[string]string{
+				"reason": "source_ip_mismatch",
+				"stage":  "register_peer",
+			})
+		}
+		return
+	}
+
 	// New peer — add to memory map
 	// Try to load existing PK from database first (peer may have registered PK before server restart)
 	now := time.Now()
@@ -422,9 +437,6 @@ func (s *Server) handleRegisterPeer(msg *pb.RegisterPeer, raddr *net.UDPAddr) {
 	}
 
 	// Load PK and UUID from database if available (survives server restarts)
-	if dbPeer == nil {
-		dbPeer, _ = s.db.GetPeer(id)
-	}
 	if dbPeer != nil {
 		if len(dbPeer.PK) > 0 {
 			entry.PK = dbPeer.PK
@@ -562,56 +574,37 @@ func (s *Server) processRegisterPk(msg *pb.RegisterPk, addrStr string) *pb.Rende
 		s.peers.Put(entry)
 	}
 
-	// Bind the persisted device identity before processing RegisterPk. After a
-	// restart peer.Map is empty; without this hydration any caller could replace
-	// the stored PK/UUID on its first RegisterPk. Empty stored fields remain
-	// enrollable for legacy rows and legitimate first enrollment.
+	var dbUUID, dbPK []byte
 	if existingPeer != nil {
-		if len(entry.UUID) == 0 && existingPeer.UUID != "" {
-			entry.UUID = peerUUIDFromDB(existingPeer.UUID)
-		}
-		if len(entry.PK) == 0 && len(existingPeer.PK) > 0 {
-			entry.PK = append([]byte(nil), existingPeer.PK...)
+		dbUUID = peerUUIDFromDB(existingPeer.UUID)
+		dbPK = existingPeer.PK
+	}
+	res := s.peers.BindPK(id, dbUUID, dbPK, normalizePeerUUIDBytes(msg.Uuid), msg.Pk, addrStr)
+	if !res.OK {
+		// entry 在 Get 后被清理（过期/删除）——重建后重试一次
+		entry = &peer.Entry{ID: id, LastReg: time.Now()}
+		s.peers.Put(entry)
+		res = s.peers.BindPK(id, dbUUID, dbPK, normalizePeerUUIDBytes(msg.Uuid), msg.Pk, addrStr)
+		if !res.OK {
+			log.Printf("[signal] Failed to bind PK for %s: peer absent", id)
+			return registerPkResponse(pb.RegisterPkResponse_SERVER_ERROR)
 		}
 	}
-
-	// Existing identity is immutable through RegisterPk. RustDesk public keys
-	// are long-lived; rotation must use an authenticated management workflow.
-	if len(entry.UUID) > 0 && len(msg.Uuid) > 0 && !peerUUIDEqual(entry.UUID, msg.Uuid) {
-		log.Printf("[signal] UUID mismatch for %s: registered=%x, received=%x",
-			id, entry.UUID, msg.Uuid)
+	if res.UUIDMismatch {
+		log.Printf("[signal] UUID mismatch for %s", id)
 		return registerPkResponse(pb.RegisterPkResponse_UUID_MISMATCH)
 	}
-	if len(entry.PK) > 0 && len(msg.Pk) > 0 && !bytes.Equal(entry.PK, msg.Pk) {
+	if res.PKMismatch {
 		log.Printf("[signal] PK mismatch for %s", id)
 		return registerPkResponse(pb.RegisterPkResponse_NOT_SUPPORT)
-	}
-
-	// Preserve a persisted identity when a compatible client omits either field.
-	if len(msg.Uuid) > 0 {
-		entry.UUID = normalizePeerUUIDBytes(msg.Uuid)
-	}
-	if len(msg.Pk) > 0 {
-		entry.PK = append([]byte(nil), msg.Pk...)
-	}
-	entry.LastReg = time.Now()
-	// Bind exact ip:port so FindByAddr can authorize TCP/WS-only RegisterPk
-	// (viewer-only outbound when the OS service is not sending UDP heartbeats, #327).
-	// Prefer same-TCP-session bind (tcpSessionPeerID) when RegisterPk keep-alive
-	// leaves the connection open for a following PunchHole.
-	if addrStr != "" {
-		entry.IP = addrStr
-		if entry.UDPAddr == nil && entry.ConnType != peer.ConnWS {
-			entry.ConnType = peer.ConnTCP
-		}
 	}
 	s.bindTCPSessionPeer(addrStr, id)
 
 	// Persist to database
 	dbPeer := &db.Peer{
 		ID:     id,
-		UUID:   fmt.Sprintf("%x", entry.UUID),
-		PK:     entry.PK,
+		UUID:   fmt.Sprintf("%x", res.UUID),
+		PK:     res.PK,
 		Status: "ONLINE",
 	}
 	if err := s.db.UpsertPeer(dbPeer); err != nil {
@@ -702,18 +695,12 @@ func (s *Server) processIDChange(msg *pb.RegisterPk) *pb.RendezvousMessage {
 		return registerPkResponse(pb.RegisterPkResponse_SERVER_ERROR)
 	}
 
-	// Update in-memory map
-	oldEntry := s.peers.Remove(oldID)
-	if oldEntry != nil {
-		oldEntry.ID = newID
-		oldEntry.PK = effectivePK
-		if len(msg.Uuid) > 0 {
-			oldEntry.UUID = normalizePeerUUIDBytes(msg.Uuid)
-		}
-		s.peers.Put(oldEntry)
+	// Update in-memory map (atomic re-key under the map write lock)
+	if s.peers.RenameID(oldID, newID, effectivePK, normalizePeerUUIDBytes(msg.Uuid)) {
+		log.Printf("[signal] ID changed: %s → %s", oldID, newID)
+	} else {
+		log.Printf("[signal] ID changed in DB only: %s → %s (no live entry)", oldID, newID)
 	}
-
-	log.Printf("[signal] ID changed: %s → %s", oldID, newID)
 	if s.eventBus != nil {
 		s.eventBus.Publish(events.Event{
 			Type: events.EventPeerIDChanged,
