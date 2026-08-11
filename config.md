@@ -1,7 +1,7 @@
 # BetterDesk 项目状态文档（config.md）
 
 > 本文档供后续开发续接使用。**禁止写入任何凭据**（API key、数据库密码、PAT、SSH 私钥、管理员密码、会话 cookie）——一律以 `[REDACTED]` 表示。
-> 最后更新：2026-08-10 晚（第二轮全面扫描 + 修复 + 部署回归后）
+> 最后更新：2026-08-11（第三轮多路扫描 + 交叉验证 + 修复 + 部署回归后）
 
 ---
 
@@ -61,7 +61,9 @@
 
 - 工作区：`F:\betterdesk`，分支 `dev`（推送 `fork` = tiflavben/BetterDesk）
 - Remote：`origin` = UNITRONIX/BetterDesk（**上游**，主分支 `dev`）；`fork` = tiflavben/BetterDesk
-- 最近提交链（dev，HEAD = `de05c69`，2026-08-10 第二轮三批提交已推送 fork/dev，远端 SHA 匹配）：
+- 最近提交链（dev，HEAD = `5cd910d`，2026-08-11 第三轮两批提交已推送 fork/dev，远端 SHA 匹配）：
+  - `5cd910d` fix(server): ws heartbeat IP binding + race fixes + authz（9 文件：WS 心跳源 IP 校验+断开摘除防 WS 劫持、peer Map 原子方法消除锁外直写竞态+race 测试、new-peer 分支 DB IP 校验、signal WS 每 IP 连接限制、CDAP/bd-mgmt 角色门禁、匿名 heartbeat 移除归属写入、relay sessionLimiter 泄漏修复）
+  - `cb5a057` fix(security): device identity hardening + authz gaps（8 文件 web-nodejs：register-status 停泄露 access_token P0、identifyDevice 设备存在性校验+register/device-policy mismatch、operator/login 强制 TOTP、audit 升 requireAdmin、品牌上传扩展名白名单、dlp 按设备过滤、chat 上传配额、fleet 写端点认证、enroll token 一次性、register-request 防覆盖）
   - `de05c69` fix(server): heartbeat source IP check + db index + deploy paths（11 文件：心跳源 IP 校验防打洞流量劫持 + 新增 `TestHeartbeatRejectsSourceIPChange`、`peers."user"` 索引 `idx_peers_user` 双端、mesh 录制目录配置化 `MESH_RECORDINGS_DIR`/`RecordingDir` + 列表读取对齐、deploy 模板加 `WorkingDirectory=/opt/betterdesk`）
   - `1f88afb` fix(ui): toolkit gating + ws origin + misc（7 文件：toolkit 链接/功能块按 server.config 门控、tickets 创建角色 `isFullTicketAccessRole`、cdap-studio PUT 所有权 `isSuperAdminRole`、CDAP 契约 503 透传、`deviceStatusPush` + `serverTerminalProxy` 补 `enforceOrigin`）
   - `523462a` fix(security): close authz gaps + restore device self-service（10 文件：设备自管理恢复 viewer/operator 可管自己设备 scope 兜底、`/api/bd/attestation` + device-policy 加 `identifyDevice`、inventory/activity 拆 device/admin 路由修复 `/api/bd/device-policy` 被通配拦截、server_admin 补 `cdap.view`/`chat.access`、审计读端点加 `audit.view`、security-audit API 对齐 requireAdmin、database/stats 升 `server.config`）
@@ -122,6 +124,7 @@
 - 上游合并后：`go test ./...` 全绿、Go/Node 构建通过、已部署三机、面板 API 冒烟 200 ✓
 - **2026-08-10 全面扫描 + 修复 + 加固后**：`go test` 5 包全绿；安全回归 8/8 通过（HTTPS 5443 实测）；合同字段保存回归通过；relay 双节点心跳正常（CPU/RAM 有值）；加固前后对比：防火墙（nftables drop）/SSH（纯密钥）/备份（每日 02:00）/PG 密码（24 位）/服务降权（betterdesk 用户）/HTTPS（5443）✓
 - **2026-08-10 第二轮（28 文件修复部署三机实测）**：device-policy 匿名 401 / 带头 200；attestation 匿名 401；security-audit 匿名 401；Go API 200；双 relay online；心跳 5s 更新；`go test` 全绿（signal 新增 `TestHeartbeatRejectsSourceIPChange` PASS）✓
+- **2026-08-11 第三轮（17 文件修复部署三机实测 8/8）**：register-status 无 access_token / device-policy 匿名 401 + 伪造设备 401 Unknown device / attestation 401 / settings+audit 401 / fleet 401 / Go API 200 / 双 relay online；三机二进制 md5 一致；`go build`/`go vet`/`go test -race` 全绿（signal 40s+ 含 WS 新测试）；`node --check` 全过 ✓
 
 ## 9. 进行中 / 待办
 
@@ -135,6 +138,15 @@
 - [x] **合同字段保存 Request failed**：PATCH→PUT + panel 前缀修复；浏览器改 4→改 3 回归通过，Go API 双源确认
 - [x] **上游合并后复验**：`go test` 5 包全绿、relay 心跳/流量计量链路正常（见第 8 节）
 - [x] **gitignore 策略**：`bin/`、`github_pat.txt` 已忽略
+- [x] **第三轮多路扫描 + 交叉验证**（4 路独立：web 双视角 + Go 双视角，两路报告交叉比对，独报项独立复核）
+- [x] **register-status access_token 泄露（P0）**：已修复 + 实测无泄露
+- [x] **identifyDevice 设备伪造伞**：X-Device-Id 仅标识 → 加存在性校验，实测伪造 401 Unknown device
+- [x] **operator/login TOTP 绕过**：已修复（403 totp_required）
+- [x] **WS 心跳劫持**：UDP 校验补齐 WS 面 + 断开摘除 + 连接限制
+- [ ] **新增**：identifyDevice 8 份复制实现未收敛为公共模块（后续可重构）
+- [ ] **新增**：register-status 一次性领取需 dbAdapter 置空方法（TODO 已注释）
+- [ ] **新增**：chat 上传配额为 in-memory（重启清零，后续可持久化）
+- [ ] **新增**：Web Remote 经 WS 的正常场景需在真实 RustDesk 客户端回归验证
 - [ ] 远程桌面 relay 数据通路：面板 `/ws/relay` WS 代理需指向真实 relay（102/103）——本轮未处理，仍待验证
 - [ ] 测试用户 517532265 及其合同清理与否待用户确认（真实业务使用中）
 - [ ] LAN 直连流量不经过 relay（RustDesk 架构），不计入合同流量——如需计费需另行设计（架构边界）
@@ -187,3 +199,6 @@ curl -s -H "X-API-Key: *** root@192.168.1.101 'cat /etc/betterdesk/.api_key')" h
 14. ⚠️ **web-nodejs 路由通配陷阱**：挂在 `/api/bd` 下的模块若有管理端 `GET /` 或 `GET /:id` 通配路由，会拦截 `/api/bd/device-policy` 等设备端点（剥离前缀后匹配）——inventory/activity 已拆 device/admin 双 router（`module.exports={device,admin}`，index.js 分挂载）；新增 `/api/bd` 模块前先检查有无通配路由
 15. ⚠️ **拆分后端点认证暴露**：通配路由移除后，设备端点可能从"被 requireAuth 侥幸挡住"变"真匿名"——device-policy 曾因此匿名 200，已补 `identifyDevice`；拆分后必须重测匿名可达性（匿名应 401）
 16. **lazyRoute 包 `module.exports` 为 `{device,admin}` 时**：index.js 需改急加载（lazyRoute 取不到 `.device`）
+17. ⚠️ **Codex 夹带越权改动**：批 C 修复时 Codex 自动加了任务外的 WS limiter，子代理清理残留时又把批 D 的正当修复（P2-2 limiter）当残留误删；并发批次的"清理残留"任务与"新增功能"任务不能同时针对同一文件区，否则互相覆盖。修复 ws.go 竞态时务必先确认并行批次是否也在改同文件
+18. ⚠️ **X-Device-Id 头只是设备标识不是认证**（8 处 identifyDevice 复制实现）；新增 /api/bd 端点时一律 Bearer 优先、X-Device-Id 仅注册前流程可用
+19. ⚠️ **并行子代理 + Codex 修改同一文件（signal/ws.go）会互相覆盖**（批 D 复原 limiter 又被批 C 收尾删除）——Go 侧多批次并行时按包隔离而非按文件隔离
