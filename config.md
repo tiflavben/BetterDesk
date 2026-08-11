@@ -1,7 +1,7 @@
 # BetterDesk 项目状态文档（config.md）
 
 > 本文档供后续开发续接使用。**禁止写入任何凭据**（API key、数据库密码、PAT、SSH 私钥、管理员密码、会话 cookie）——一律以 `[REDACTED]` 表示。
-> 最后更新：2026-08-11（第三轮多路扫描 + 交叉验证 + 修复 + 部署回归后）
+> 最后更新：2026-08-11（第四轮乱码修复 + 性能优化 + 遗留待办 + 多轮检查后）
 
 ---
 
@@ -61,7 +61,10 @@
 
 - 工作区：`F:\betterdesk`，分支 `dev`（推送 `fork` = tiflavben/BetterDesk）
 - Remote：`origin` = UNITRONIX/BetterDesk（**上游**，主分支 `dev`）；`fork` = tiflavben/BetterDesk
-- 最近提交链（dev，HEAD = `5cd910d`，2026-08-11 第三轮两批提交已推送 fork/dev，远端 SHA 匹配）：
+- 最近提交链（dev，HEAD = `ca4d89b`，2026-08-11 第四轮三批提交已推送 fork/dev，远端 SHA 匹配）：
+  - `80fc31e` fix(i18n): repair corrupted language files（15 文件：374 处 U+FFFD 乱码修复，对照 en.json 推断丢失字符）
+  - `eee20e7` fix(ui): self-host fonts + gzip + assets（Material Icons 字体本地化消除内网 Google Fonts 21s 渲染阻塞、gzip 流式压缩+修复隐式头部 bug、logo 2.1MB→62KB、xterm 本地化+修 addon-fit 404 坏链）
+  - `ca4d89b` fix(server): consolidate device auth + legacy todos（identifyDevice 8 份复制收敛公共模块、register-status 一次性领取、chat 配额文件系统持久化）
   - `5cd910d` fix(server): ws heartbeat IP binding + race fixes + authz（9 文件：WS 心跳源 IP 校验+断开摘除防 WS 劫持、peer Map 原子方法消除锁外直写竞态+race 测试、new-peer 分支 DB IP 校验、signal WS 每 IP 连接限制、CDAP/bd-mgmt 角色门禁、匿名 heartbeat 移除归属写入、relay sessionLimiter 泄漏修复）
   - `cb5a057` fix(security): device identity hardening + authz gaps（8 文件 web-nodejs：register-status 停泄露 access_token P0、identifyDevice 设备存在性校验+register/device-policy mismatch、operator/login 强制 TOTP、audit 升 requireAdmin、品牌上传扩展名白名单、dlp 按设备过滤、chat 上传配额、fleet 写端点认证、enroll token 一次性、register-request 防覆盖）
   - `de05c69` fix(server): heartbeat source IP check + db index + deploy paths（11 文件：心跳源 IP 校验防打洞流量劫持 + 新增 `TestHeartbeatRejectsSourceIPChange`、`peers."user"` 索引 `idx_peers_user` 双端、mesh 录制目录配置化 `MESH_RECORDINGS_DIR`/`RecordingDir` + 列表读取对齐、deploy 模板加 `WorkingDirectory=/opt/betterdesk`）
@@ -125,6 +128,7 @@
 - **2026-08-10 全面扫描 + 修复 + 加固后**：`go test` 5 包全绿；安全回归 8/8 通过（HTTPS 5443 实测）；合同字段保存回归通过；relay 双节点心跳正常（CPU/RAM 有值）；加固前后对比：防火墙（nftables drop）/SSH（纯密钥）/备份（每日 02:00）/PG 密码（24 位）/服务降权（betterdesk 用户）/HTTPS（5443）✓
 - **2026-08-10 第二轮（28 文件修复部署三机实测）**：device-policy 匿名 401 / 带头 200；attestation 匿名 401；security-audit 匿名 401；Go API 200；双 relay online；心跳 5s 更新；`go test` 全绿（signal 新增 `TestHeartbeatRejectsSourceIPChange` PASS）✓
 - **2026-08-11 第三轮（17 文件修复部署三机实测 8/8）**：register-status 无 access_token / device-policy 匿名 401 + 伪造设备 401 Unknown device / attestation 401 / settings+audit 401 / fleet 401 / Go API 200 / 双 relay online；三机二进制 md5 一致；`go build`/`go vet`/`go test -race` 全绿（signal 40s+ 含 WS 新测试）；`node --check` 全过 ✓
+- **2026-08-11 第四轮（真实浏览器回归）**：登录 21.6s→165ms、dashboard 294ms、devices 132ms（约 130 倍提速）；图标乱码消失（字体本地化）、0 外链字体请求、0 console 错误；gzip 字节级验证（`1f 8b` 魔数 + `gzip -t` VALID + `--compressed` 200）；26 个 lang 文件 JSON 全过 0 处 U+FFFD ✓
 
 ## 9. 进行中 / 待办
 
@@ -143,9 +147,16 @@
 - [x] **identifyDevice 设备伪造伞**：X-Device-Id 仅标识 → 加存在性校验，实测伪造 401 Unknown device
 - [x] **operator/login TOTP 绕过**：已修复（403 totp_required）
 - [x] **WS 心跳劫持**：UDP 校验补齐 WS 面 + 断开摘除 + 连接限制
-- [ ] **新增**：identifyDevice 8 份复制实现未收敛为公共模块（后续可重构）
-- [ ] **新增**：register-status 一次性领取需 dbAdapter 置空方法（TODO 已注释）
-- [ ] **新增**：chat 上传配额为 in-memory（重启清零，后续可持久化）
+- [x] **第四轮乱码修复**：图标字体加载失败 + lang 文件 374 处 U+FFFD（80fc31e / eee20e7）
+- [x] **第四轮打开缓慢**：Google Fonts 渲染阻塞 21.6s → 字体本地化 + gzip + logo 缩小（约 130 倍提速）
+- [x] **新增**：identifyDevice 8 份复制实现未收敛为公共模块（后续可重构）→ 已收敛公共模块（ca4d89b）
+- [x] **新增**：register-status 一次性领取需 dbAdapter 置空方法（TODO 已注释）→ 已实现
+- [x] **新增**：chat 上传配额为 in-memory（重启清零，后续可持久化）→ 已文件系统持久化
+- [ ] **新增**：JS 拆包/按需加载（settings.js 234KB 大杂烩，需路由分包）
+- [ ] **新增**：`?v=` 缓存失效改内容 hash（避免改 JS 后需重启面板，见坑 5）
+- [ ] **新增**：品牌字体预览外链（settings.js:2366）内网不可用
+- [ ] **新增**：devices 页 "Access control strategies" 区块未 i18n
+- [ ] **新增**：gzip 中间件无专项单测（建议后续补 compression 包替代或单测）
 - [ ] **新增**：Web Remote 经 WS 的正常场景需在真实 RustDesk 客户端回归验证
 - [ ] 远程桌面 relay 数据通路：面板 `/ws/relay` WS 代理需指向真实 relay（102/103）——本轮未处理，仍待验证
 - [ ] 测试用户 517532265 及其合同清理与否待用户确认（真实业务使用中）
@@ -202,3 +213,6 @@ curl -s -H "X-API-Key: *** root@192.168.1.101 'cat /etc/betterdesk/.api_key')" h
 17. ⚠️ **Codex 夹带越权改动**：批 C 修复时 Codex 自动加了任务外的 WS limiter，子代理清理残留时又把批 D 的正当修复（P2-2 limiter）当残留误删；并发批次的"清理残留"任务与"新增功能"任务不能同时针对同一文件区，否则互相覆盖。修复 ws.go 竞态时务必先确认并行批次是否也在改同文件
 18. ⚠️ **X-Device-Id 头只是设备标识不是认证**（8 处 identifyDevice 复制实现）；新增 /api/bd 端点时一律 Bearer 优先、X-Device-Id 仅注册前流程可用
 19. ⚠️ **并行子代理 + Codex 修改同一文件（signal/ws.go）会互相覆盖**（批 D 复原 limiter 又被批 C 收尾删除）——Go 侧多批次并行时按包隔离而非按文件隔离
+20. ⚠️ **Node 隐式头部时序**：`express.static`（send 库）setHeader + `stream.pipe(res)` 不显式调 writeHead，首次 `res.write` 先于 writeHead 触发；gzip 中间件若只在 writeHead 才初始化压缩，数据已明文写出但头声明 gzip → 浏览器解压失败页面永久 loading。修复：write 路径惰性初始化（startGzip 辅助函数，write/writeHead 双入口幂等）。验证 gzip 必须字节级（魔数 + `gzip -t` + `--compressed`），不能只看 size
+21. ⚠️ **部署验证要字节级**：`curl -w size_download` 只看大小会漏检"声明 gzip 头但明文输出"类损坏（97081B 恰好看起来像压缩过）；必须验证魔数 `1f 8b` + `gzip -t`
+22. ⚠️ **UI 乱码不一定是编码问题**：图标字体加载失败（ligature 变英文文本）视觉像乱码；先查 Network 面板外链字体请求
