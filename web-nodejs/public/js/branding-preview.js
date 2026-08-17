@@ -75,13 +75,26 @@
         }
     }
 
+    // Intranet-safe font preview: load the locally cached @font-face css
+    // (/fonts/<safe>/font.css) instead of the Google Fonts CDN. On 404 the
+    // link is dropped and rendering falls back to font-family (installed
+    // font or generic fallback) — no external network required.
     function loadFontPreview(family) {
         if (!family) return;
         const key = family.replace(/\s+/g, '+');
         if (_fontLinks[key]) return;
+        const safeName = String(family)
+            .replace(/[^a-zA-Z0-9\s-]/g, '')
+            .replace(/\s+/g, '-')
+            .toLowerCase();
+        if (!safeName || safeName === '.' || safeName === '..') return;
         const link = document.createElement('link');
         link.rel = 'stylesheet';
-        link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@400;600;700&display=swap`;
+        link.href = `/fonts/${encodeURIComponent(safeName)}/font.css`;
+        link.onerror = () => {
+            delete _fontLinks[key];
+            if (link.parentNode) link.parentNode.removeChild(link);
+        };
         document.head.appendChild(link);
         _fontLinks[key] = link;
     }

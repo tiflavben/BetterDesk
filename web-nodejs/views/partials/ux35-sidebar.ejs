@@ -120,6 +120,8 @@
                 <span><%= _('nav.remote') || 'Remote Desktop' %></span>
                 <span class="material-icons sidebar-link-external" aria-hidden="true">open_in_new</span>
             </a>
+            <% } %>
+            <% if (hasPermission('server.config')) { %>
             <a href="/toolkit" class="ux35-sidebar-item <%= currentPage === 'toolkit' ? 'active' : '' %>">
                 <span class="material-icons">handyman</span>
                 <span><%= _('nav.toolkit') || 'Toolkit' %></span>
