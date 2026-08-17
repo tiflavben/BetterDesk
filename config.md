@@ -1,7 +1,7 @@
 # BetterDesk 项目状态文档（config.md）
 
 > 本文档供后续开发续接使用。**禁止写入任何凭据**（API key、数据库密码、PAT、SSH 私钥、管理员密码、会话 cookie）——一律以 `[REDACTED]` 表示。
-> 最后更新：2026-08-11（第四轮乱码修复 + 性能优化 + 遗留待办 + 多轮检查后）
+> 最后更新：2026-08-17（第五轮 P1/P3 遗留处理：?v= 内容 hash、字体本地化、gzip 单测、坑 23-25）
 
 ---
 
@@ -61,7 +61,9 @@
 
 - 工作区：`F:\betterdesk`，分支 `dev`（推送 `fork` = tiflavben/BetterDesk）
 - Remote：`origin` = UNITRONIX/BetterDesk（**上游**，主分支 `dev`）；`fork` = tiflavben/BetterDesk
-- 最近提交链（dev，HEAD = `ca4d89b`，2026-08-11 第四轮三批提交已推送 fork/dev，远端 SHA 匹配）：
+- 最近提交链（dev，HEAD = `c7425ff`，2026-08-17 第五轮两批提交已推送 fork/dev，远端 SHA 匹配）：
+  - `a88b906` fix(ui): ux35-sidebar toolkit 门控对齐 server.config、zh/zh-TW strategies 翻译、品牌字体预览本地化（移除 Google Fonts 外链，内网可用）
+  - `c7425ff` fix(ui): ?v= 改内容 hash（computeStaticCacheHash，跨重启稳定）、pollConsoleRestart 改 uptime 判定防误报、新增零依赖 gzip 中间件单测 14/14（tests/gzip-middleware.test.js）
   - `80fc31e` fix(i18n): repair corrupted language files（15 文件：374 处 U+FFFD 乱码修复，对照 en.json 推断丢失字符）
   - `eee20e7` fix(ui): self-host fonts + gzip + assets（Material Icons 字体本地化消除内网 Google Fonts 21s 渲染阻塞、gzip 流式压缩+修复隐式头部 bug、logo 2.1MB→62KB、xterm 本地化+修 addon-fit 404 坏链）
   - `ca4d89b` fix(server): consolidate device auth + legacy todos（identifyDevice 8 份复制收敛公共模块、register-status 一次性领取、chat 配额文件系统持久化）
@@ -74,8 +76,8 @@
   - `50dafea` fix(ui): device scope count, fleet CSRF, contract UX（29 文件：effective-scope 双解包/fleet CSRF 头/inventory NaN/负偏移/防重复提交/时区统一/i18n 24 语言补全）
   - `762f9b9` fix(security): authz hardening + XSS/upload fixes（16 文件：API key 泄露封堵/审计写入认证/设备 delete-ban 权限/系统日志-Docker server.config/票证 IDOR/CDAP 授权/策略越权/toolkit requireAdmin/布局 JSON.stringify XSS/chat 附件/SVG 上传过滤）
   - 更早：`f4d4e5c` Merge origin/dev（**上游 12 个新提交已合并**：agent Wails UI、fleet org 过滤修复、attestation 对比度、版本 bump 至 3.5.29）、`10cc31d` fix(billing): user-scoped contracts resolved & enforced、`423da9b` style(dashboard)、`ff6192e` feat(dashboard)、`0550f7f` feat(ui): 管理员/普通用户 UI 隔离、`2e2fe18` 用户资源管理、`add0c6a`/`d941ca3`/`93beda3`/`c244eff`/`1c4b80c` Relay telemetry 链
-- **GitHub push 注意事项**：本机 git 全局代理已失效，push 必须
-  `env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY git -c http.proxy= -c https.proxy= push https://<token>:<token>@github.com/tiflavben/BetterDesk.git dev`（token 文件 `C:\Users\xoon\rdgen_ghbearer_token.txt`，仅本地，禁入 git/文档）
+- **GitHub push 注意事项**：GitHub 直连被墙（2026-08-17 起，见坑 24），本机 git 全局配置已指向本地代理 127.0.0.1:7890（Clash），push 必须
+  `env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY git push https://<token>:<token>@github.com/tiflavben/BetterDesk.git dev`（env -u 清环境变量代理后 git 自动用全局配置，勿再 `-c http.proxy=` 空覆盖；token 文件 `C:\Users\xoon\rdgen_ghbearer_token.txt`，仅本地，禁入 git/文档）
 - 敏感文件（禁读/禁提交/禁记录内容）：`github_pat.txt`、`F:\betterdesk\bin\` 下构建产物、任何 token/私钥文件
 
 ## 5. 权限架构（管理员 vs 普通用户）
@@ -129,6 +131,7 @@
 - **2026-08-10 第二轮（28 文件修复部署三机实测）**：device-policy 匿名 401 / 带头 200；attestation 匿名 401；security-audit 匿名 401；Go API 200；双 relay online；心跳 5s 更新；`go test` 全绿（signal 新增 `TestHeartbeatRejectsSourceIPChange` PASS）✓
 - **2026-08-11 第三轮（17 文件修复部署三机实测 8/8）**：register-status 无 access_token / device-policy 匿名 401 + 伪造设备 401 Unknown device / attestation 401 / settings+audit 401 / fleet 401 / Go API 200 / 双 relay online；三机二进制 md5 一致；`go build`/`go vet`/`go test -race` 全绿（signal 40s+ 含 WS 新测试）；`node --check` 全过 ✓
 - **2026-08-11 第四轮（真实浏览器回归）**：登录 21.6s→165ms、dashboard 294ms、devices 132ms（约 130 倍提速）；图标乱码消失（字体本地化）、0 外链字体请求、0 console 错误；gzip 字节级验证（`1f 8b` 魔数 + `gzip -t` VALID + `--compressed` 200）；26 个 lang 文件 JSON 全过 0 处 U+FFFD ✓
+- **2026-08-17 第五轮（P1/P3 遗留处理）**：?v= 内容 hash 跨重启稳定（3.5.25.ea83ea081948 重启不变）、restart-status 返回 uptime+cacheVersion、字体本地化 googleapis=0、device-policy 401/goapi 200/login 200、gzip 单测 14/14 本地实测、console 重启 journalctl 0 错误 ✓
 
 ## 9. 进行中 / 待办
 
@@ -152,20 +155,26 @@
 - [x] **新增**：identifyDevice 8 份复制实现未收敛为公共模块（后续可重构）→ 已收敛公共模块（ca4d89b）
 - [x] **新增**：register-status 一次性领取需 dbAdapter 置空方法（TODO 已注释）→ 已实现
 - [x] **新增**：chat 上传配额为 in-memory（重启清零，后续可持久化）→ 已文件系统持久化
-- [ ] **新增**：JS 拆包/按需加载（settings.js 234KB 大杂烩，需路由分包）
-- [ ] **新增**：`?v=` 缓存失效改内容 hash（避免改 JS 后需重启面板，见坑 5）
-- [ ] **新增**：品牌字体预览外链（settings.js:2366）内网不可用
-- [ ] **新增**：devices 页 "Access control strategies" 区块未 i18n
-- [ ] **新增**：gzip 中间件无专项单测（建议后续补 compression 包替代或单测）
-- [ ] **新增**：Web Remote 经 WS 的正常场景需在真实 RustDesk 客户端回归验证
+- [x] **新增**：JS 拆包评估（结论：不拆——gzip 后仅 42KB、?v= 全局 hash 下拆包缓存收益为零、169 函数闭包耦合；收益≈0 风险实存）
+- [x] **新增**：?v= 缓存失效改内容 hash（computeStaticCacheHash，二进制扩展名正确排除；附带收益：集群多节点 cacheVersion 一致）
+- [x] **新增**：品牌字体预览外链（已本地化 /fonts/<safe>/font.css + onerror 降级；字体列表本身是硬编码 CURATED_FONTS 不依赖外网）
+- [x] **新增**：devices 页 strategies i18n（zh/zh-TW 已翻译；其余 22 语言仍英文原文=观察项）
+- [x] **新增**：gzip 中间件专项单测（零依赖 tests/gzip-middleware.test.js 14/14，含 drift 检查）
+- [x] **新增**：Web Remote WS 误伤审查（结论：无误伤——Web Remote 走 TCP 21116 不经 WS 心跳；rdclient 从不发 RegisterPeer）
+- [x] **新增**：pollConsoleRestart 适配内容 hash（uptime 判定：uptimeDropped/freshProcess/cacheVersionChanged 三条件 OR）
+- [x] **新增**：ux35-sidebar Toolkit 门控不一致（已对齐 server.config，与 classic sidebar 一致）
 - [ ] 远程桌面 relay 数据通路：面板 `/ws/relay` WS 代理需指向真实 relay（102/103）——本轮未处理，仍待验证
 - [ ] 测试用户 517532265 及其合同清理与否待用户确认（真实业务使用中）
 - [ ] LAN 直连流量不经过 relay（RustDesk 架构），不计入合同流量——如需计费需另行设计（架构边界）
 - [ ] **新增**：面板自签名证书 2027-08-10 到期，需轮换
 - [ ] **新增**：21121 TLS 化后 RustDesk 旧客户端明文兼容性实测（如需要 `RUSTDESK_API_TLS=false`）
 - [ ] **新增**：`uitest_no_pkg` 合同（2/300MB/2026-12-31）为测试产物，可清理
-- [ ] **新增**：`ENROLLMENT_MODE=open` 待用户决策是否改 `managed`
-- [ ] **新增**：`ux35-sidebar.ejs` 的 Toolkit 门控仍挂 `device.connect`（与 classic sidebar 不一致），下轮对齐
+- [ ] **新增**：ENROLLMENT_MODE=open 改 managed 待用户决策（业务在用，保持 open）
+- [ ] **新增**：Web Remote 真机回归待测试机 192.168.1.14 恢复（当前 ping 100% 丢；降级代码审查已做）
+- [ ] **新增**：settings.js 更新流程 101 环境浏览器冒烟（更新/重启/uptime 判定实测）
+- [ ] **新增**：其余 22 语言 strategies_title 仍英文（观察项）
+- [ ] **新增**：CSP styleSrc 仍含 googleapis 白名单（middleware/security.js，未清理）
+- [ ] **新增**：betterdesk-agent-client Tauri 壳仍引用 Google Fonts（index.html/tauri.conf.json）
 
 ## 10. 部署速查
 
@@ -198,7 +207,7 @@ curl -s -H "X-API-Key: *** root@192.168.1.101 'cat /etc/betterdesk/.api_key')" h
 2. **两套用户库密码不同步**：面板重置密码 ≠ Go 客户端登录密码，需两侧分别重置
 3. **设备 owner 绑定**：客户端必须在 RustDesk 客户端登录（API 服务器 21114）产生活跃 client session，`ApplyActiveSessionOwner` 才会把 `peers."user"` 绑定为登录账号；无登录的连接 user 为空
 4. **面板 settings 读取 auth.db**（`db.getSetting` 经 `openAuth()`），不是 `db_v2.sqlite3`
-5. **浏览器缓存 `?v=` JS**：面板静态 JS 带 `?v=<version>.<timestamp>` 版本参数（页面渲染时生成），改 JS 后需重启面板使时间戳变化，否则浏览器用旧缓存
+5. **浏览器缓存 `?v=` JS**：面板静态 JS 带 `?v=<version>.<timestamp>` 版本参数（页面渲染时生成），改 JS 后需重启面板使时间戳变化，否则浏览器用旧缓存（⚠️ 第五轮已改内容 hash——见坑 25，改 JS 无需重启面板）
 6. **GitHub push**：本机代理失效，必须 `env -u http_proxy ... git -c http.proxy= -c https.proxy= push` + `https://<token>:<token>@github.com/...` 格式
 7. 本机 `21117` 被用户自启 `bdserver.exe` 占用——本机测试 Relay 会端口冲突（环境问题，非代码 bug）
 8. **连接模式（P2P/仅中继）面板保存禁用**：`serverConnectionConfigService.js` 曾硬编码 `betterdesk-server.service`，fork 部署为 `betterdesk-master.service` → 检测不到 → `writable=false`。已改为候选服务名探测（`resolveSystemdUnit()`）；保存写入 systemd 单元 Environment（`P2P_FIRST`/`ALWAYS_USE_RELAY`/`P2P_FALLBACK_MS`/`SAME_NAT_RELAY`），需 `daemon-reload`+重启 Go 服务生效（面板"保存并重启"按钮处理）
@@ -216,3 +225,6 @@ curl -s -H "X-API-Key: *** root@192.168.1.101 'cat /etc/betterdesk/.api_key')" h
 20. ⚠️ **Node 隐式头部时序**：`express.static`（send 库）setHeader + `stream.pipe(res)` 不显式调 writeHead，首次 `res.write` 先于 writeHead 触发；gzip 中间件若只在 writeHead 才初始化压缩，数据已明文写出但头声明 gzip → 浏览器解压失败页面永久 loading。修复：write 路径惰性初始化（startGzip 辅助函数，write/writeHead 双入口幂等）。验证 gzip 必须字节级（魔数 + `gzip -t` + `--compressed`），不能只看 size
 21. ⚠️ **部署验证要字节级**：`curl -w size_download` 只看大小会漏检"声明 gzip 头但明文输出"类损坏（97081B 恰好看起来像压缩过）；必须验证魔数 `1f 8b` + `gzip -t`
 22. ⚠️ **UI 乱码不一定是编码问题**：图标字体加载失败（ligature 变英文文本）视觉像乱码；先查 Network 面板外链字体请求
+23. ⚠️ **Codex CLI 默认模型 gpt-5.6-sol 经 cc-switch 代理时 additional_tools 被丢弃**：模型称无工具、0 落地、甚至幻觉成功报告——须 `codex exec -m deepseek-v4-flash` 规避；前台管道+pty 易 420s 挂起，改后台+日志文件
+24. ⚠️ **GitHub 直连被墙（2026-08-17 起）**：须走全局 git 配置本地代理 127.0.0.1:7890（Clash）；env -u 清环境变量代理后 git 自动用全局配置，勿 `-c http.proxy=` 空覆盖
+25. ⚠️ **内容 hash 替代 Date.now() 后**：依赖"cacheVersion 变化"判定的前端逻辑（如更新轮询）会失效——改判 uptime（新进程从 0 起）
