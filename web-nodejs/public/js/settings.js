@@ -2356,14 +2356,28 @@
     }
 
     /**
-     * Load font preview via Google Fonts CSS
+     * Load font preview CSS (intranet-safe).
+     * Uses the locally cached @font-face css (/fonts/<safe>/font.css) so the
+     * preview works without external network. If the font is not cached yet,
+     * the css 404s, the link is removed and the preview falls back to
+     * font-family rendering (installed font or generic fallback).
      */
     function loadFontPreview(family) {
+        if (!family) return;
         const key = family.replace(/\s+/g, '+');
         if (_fontPreviewLinks[key]) return;
+        const safeName = String(family)
+            .replace(/[^a-zA-Z0-9\s-]/g, '')
+            .replace(/\s+/g, '-')
+            .toLowerCase();
+        if (!safeName || safeName === '.' || safeName === '..') return;
         const link = document.createElement('link');
         link.rel = 'stylesheet';
-        link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@400;700&display=swap`;
+        link.href = `/fonts/${encodeURIComponent(safeName)}/font.css`;
+        link.onerror = () => {
+            delete _fontPreviewLinks[key];
+            if (link.parentNode) link.parentNode.removeChild(link);
+        };
         document.head.appendChild(link);
         _fontPreviewLinks[key] = link;
     }
@@ -2479,8 +2493,8 @@
                             });
                             loadLocalFontCount();
                         } catch (e) {
-                            // Still use via CDN even if download fails
-                            console.warn('Font download failed, using CDN:', e);
+                            // Font not cached locally — preview falls back to font-family rendering
+                            console.warn('Font download failed, using local fallback:', e);
                         }
                         item.classList.remove('font-downloading');
                     }
@@ -3898,10 +3912,26 @@
         }
     }
 
-    function pollConsoleRestart(installResult) {
+    async function pollConsoleRestart(installResult) {
         let attempts = 0;
         const maxAttempts = 90;
         const previousCacheVersion = window.BetterDesk?.cacheVersion || '';
+        let previousUptime = 0;
+        try {
+            const baselineResp = await fetch('/api/settings/restart-status?_=' + Date.now(), {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Cache-Control': 'no-cache' }
+            });
+            if (baselineResp.ok) {
+                const baselineBody = await baselineResp.json().catch(() => null);
+                const baselineStatus = baselineBody?.data || baselineBody || {};
+                const baselineUptime = Number(baselineStatus.uptime);
+                if (Number.isFinite(baselineUptime)) previousUptime = baselineUptime;
+            }
+        } catch (_e) {
+            previousUptime = 0;
+        }
         const interval = setInterval(async () => {
             attempts++;
             setUpdatePhase('restart', 'active', `${_('updates.restarting')} (${attempts}/${maxAttempts})`);
@@ -3914,7 +3944,10 @@
                 if (resp.ok) {
                     const body = await resp.json().catch(() => null);
                     const status = body?.data || body || {};
-                    if (previousCacheVersion && status.cacheVersion && status.cacheVersion === previousCacheVersion) {
+                    const uptimeDropped = previousUptime > 0 && typeof status.uptime === 'number' && status.uptime < previousUptime - 5;
+                    const freshProcess = typeof status.uptime === 'number' && status.uptime < 30;
+                    const cacheVersionChanged = previousCacheVersion && status.cacheVersion && status.cacheVersion !== previousCacheVersion;
+                    if (!uptimeDropped && !freshProcess && !cacheVersionChanged) {
                         return;
                     }
 
@@ -5054,12 +5087,27 @@
         }
     }
 
-    function pollAdvancedConsoleRestart() {
+    async function pollAdvancedConsoleRestart() {
         let attempts = 0;
         const maxAttempts = 90;
         const previousCacheVersion = window.BetterDesk?.cacheVersion || '';
         Notifications.info(_('settings.advanced_restart_polling'));
-
+        let previousUptime = 0;
+        try {
+            const baselineResp = await fetch('/api/settings/restart-status?_=' + Date.now(), {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Cache-Control': 'no-cache' }
+            });
+            if (baselineResp.ok) {
+                const baselineBody = await baselineResp.json().catch(() => null);
+                const baselineStatus = baselineBody?.data || baselineBody || {};
+                const baselineUptime = Number(baselineStatus.uptime);
+                if (Number.isFinite(baselineUptime)) previousUptime = baselineUptime;
+            }
+        } catch (_e) {
+            previousUptime = 0;
+        }
         const interval = setInterval(async () => {
             attempts++;
             try {
@@ -5070,7 +5118,10 @@
                 if (resp.ok) {
                     const body = await resp.json().catch(() => null);
                     const status = body?.data || body || {};
-                    if (previousCacheVersion && status.cacheVersion && status.cacheVersion === previousCacheVersion) {
+                    const uptimeDropped = previousUptime > 0 && typeof status.uptime === 'number' && status.uptime < previousUptime - 5;
+                    const freshProcess = typeof status.uptime === 'number' && status.uptime < 30;
+                    const cacheVersionChanged = previousCacheVersion && status.cacheVersion && status.cacheVersion !== previousCacheVersion;
+                    if (!uptimeDropped && !freshProcess && !cacheVersionChanged) {
                         return;
                     }
                     clearInterval(interval);

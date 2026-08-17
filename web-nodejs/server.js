@@ -14,6 +14,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
+const crypto = require('crypto');
 
 const config = require('./config/config');
 const { redactUrlForLog } = require('./lib/logRedact');
@@ -141,9 +142,30 @@ const sessionMiddleware = session({
 });
 app.use(sessionMiddleware);
 
-// Cache version — changes on every restart/deployment, stable during runtime.
-// Used in ?v= query strings so browsers cache assets per deployment.
-app.locals.cacheVersion = config.appVersion + '.' + Date.now();
+// Cache version — derived from the static asset content hash so browsers
+// cache assets per deployment and bust the cache when content changes.
+function computeStaticCacheHash() {
+    try {
+        const hash = crypto.createHash('sha256');
+        const walk = (dir) => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    walk(full);
+                } else if (/\.(js|css|json)$/i.test(entry.name)) {
+                    hash.update(fs.readFileSync(full));
+                }
+            }
+        };
+        walk(path.join(__dirname, 'public'));
+        return hash.digest('hex').slice(0, 12);
+    } catch (err) {
+        logger.warn('[Cache] Static content hash failed, falling back to timestamp:', err.message);
+        return String(Date.now());
+    }
+}
+
+app.locals.cacheVersion = config.appVersion + '.' + computeStaticCacheHash();
 
 // ---- Gzip compression for text responses (zero-dependency, node built-in zlib) ----
 // Streaming gzip for any text response (static assets via express.static, rendered
